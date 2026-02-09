@@ -1,0 +1,18 @@
+{
+  "name": "daio",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev --filter=@daio/backend --filter=@daio/frontend",
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "db:push": "supabase db push",
+    "db:push:seed": "supabase db push --include-seed"
+  },
+  "devDependencies": {
+    "turbo": "^2.6.3",
+    "typescript": "^5.8.0"
+  },
+  "packageManager": "pnpm@10.26.0"
+}

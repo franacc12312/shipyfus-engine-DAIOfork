@@ -1,0 +1,43 @@
+import { z } from 'zod';
+
+export const ideationConfigSchema = z.object({
+  platform: z.enum(['web', 'cli', 'api', 'library']).optional(),
+  audience: z.enum(['consumer', 'developer', 'business']).optional(),
+  complexity: z.enum(['trivial', 'simple', 'moderate']).optional(),
+  custom_rules: z.array(z.string()).optional(),
+});
+
+export const planningConfigSchema = z.object({
+  max_phases: z.number().int().min(1).max(10).optional(),
+  require_tests: z.boolean().optional(),
+  max_files_per_phase: z.number().int().min(1).max(50).optional(),
+  custom_rules: z.array(z.string()).optional(),
+});
+
+export const developmentConfigSchema = z.object({
+  framework: z.string().optional(),
+  language: z.string().optional(),
+  max_files: z.number().int().min(1).max(100).optional(),
+  max_iterations: z.number().int().min(1).max(50).optional(),
+  max_budget_usd: z.number().min(0.1).max(100).optional(),
+  custom_rules: z.array(z.string()).optional(),
+});
+
+export const deploymentConfigSchema = z.object({
+  provider: z.enum(['vercel']).optional(),
+  auto_deploy: z.boolean().optional(),
+  custom_rules: z.array(z.string()).optional(),
+});
+
+export const constraintConfigSchemas = {
+  ideation: ideationConfigSchema,
+  planning: planningConfigSchema,
+  development: developmentConfigSchema,
+  deployment: deploymentConfigSchema,
+} as const;
+
+export const departmentSchema = z.enum(['ideation', 'planning', 'development', 'deployment']);
+
+export const updateConstraintSchema = z.object({
+  config: z.record(z.unknown()),
+});

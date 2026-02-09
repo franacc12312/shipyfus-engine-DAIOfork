@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+.turbo
+supabase/.temp
+thoughts/
+products/*/
+.DS_Store
