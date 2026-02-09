@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "turbo dev --filter=@daio/backend --filter=@daio/frontend",
+    "dev:stable": "turbo dev:stable --filter=@daio/backend & turbo dev --filter=@daio/frontend",
     "build": "turbo build",
     "test": "turbo test",
     "lint": "turbo lint",

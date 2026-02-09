@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../services/db.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { env } from '../env.js';
-import { startPipeline, cancelPipeline, getActivePipelineCount } from '../orchestrator/pipeline.js';
+import { startPipeline, resumePipeline, cancelPipeline, getActivePipelineCount } from '../orchestrator/pipeline.js';
 
 const MAX_CONCURRENT_RUNS = 3;
 
@@ -90,6 +90,40 @@ router.post('/', requireAdmin, async (req, res, next) => {
     startPipeline(data.id);
 
     res.status(201).json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/retry', requireAdmin, async (req, res, next) => {
+  try {
+    if (getActivePipelineCount() >= MAX_CONCURRENT_RUNS) {
+      res.status(429).json({
+        error: `Maximum concurrent runs (${MAX_CONCURRENT_RUNS}) reached. Wait for an active run to complete.`,
+      });
+      return;
+    }
+
+    const { data: run, error: fetchError } = await db
+      .from('runs')
+      .select('status')
+      .eq('id', req.params.id)
+      .single();
+
+    if (fetchError) throw fetchError;
+    if (!run) {
+      res.status(404).json({ error: 'Run not found' });
+      return;
+    }
+
+    if (run.status !== 'failed') {
+      res.status(400).json({ error: `Cannot retry run with status: ${run.status}` });
+      return;
+    }
+
+    resumePipeline(String(req.params.id));
+
+    res.json({ status: 'resuming', id: req.params.id });
   } catch (err) {
     next(err);
   }

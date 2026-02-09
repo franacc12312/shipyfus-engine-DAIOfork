@@ -16,6 +16,7 @@ export function RunDetail() {
   const { logs, loading: logsLoading } = useRealtimeLogs(id);
   const [activeTab, setActiveTab] = useState<string>('all');
   const [cancelling, setCancelling] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   if (runLoading) {
     return (
@@ -60,6 +61,16 @@ export function RunDetail() {
     setCancelling(false);
   }
 
+  async function handleRetry() {
+    setRetrying(true);
+    try {
+      await api.post(`/runs/${id}/retry`);
+    } catch (err) {
+      console.error('Failed to retry:', err);
+    }
+    setRetrying(false);
+  }
+
   return (
     <div className="p-6">
       {/* Header */}
@@ -72,23 +83,36 @@ export function RunDetail() {
           <span className="text-xs text-zinc-600 font-mono">{id?.slice(0, 8)}</span>
         </div>
 
-        {isRunning && (
-          <AdminGate
-            fallback={
-              <button className="text-terminal-red text-xs border border-terminal-red/30 rounded px-3 py-1 hover:bg-terminal-red/10">
-                CANCEL
+        <div className="flex gap-2">
+          {run.status === 'failed' && (
+            <AdminGate fallback={null}>
+              <button
+                onClick={handleRetry}
+                disabled={retrying}
+                className="text-terminal-green text-xs border border-terminal-green/30 rounded px-3 py-1 hover:bg-terminal-green/10 disabled:opacity-50"
+              >
+                {retrying ? 'RESUMING...' : 'RETRY'}
               </button>
-            }
-          >
-            <button
-              onClick={handleCancel}
-              disabled={cancelling}
-              className="text-terminal-red text-xs border border-terminal-red/30 rounded px-3 py-1 hover:bg-terminal-red/10 disabled:opacity-50"
+            </AdminGate>
+          )}
+          {isRunning && (
+            <AdminGate
+              fallback={
+                <button className="text-terminal-red text-xs border border-terminal-red/30 rounded px-3 py-1 hover:bg-terminal-red/10">
+                  CANCEL
+                </button>
+              }
             >
-              {cancelling ? 'CANCELLING...' : 'CANCEL'}
-            </button>
-          </AdminGate>
-        )}
+              <button
+                onClick={handleCancel}
+                disabled={cancelling}
+                className="text-terminal-red text-xs border border-terminal-red/30 rounded px-3 py-1 hover:bg-terminal-red/10 disabled:opacity-50"
+              >
+                {cancelling ? 'CANCELLING...' : 'CANCEL'}
+              </button>
+            </AdminGate>
+          )}
+        </div>
       </div>
 
       {/* Stage indicator */}
@@ -127,6 +151,12 @@ export function RunDetail() {
                 <div className="text-sm text-terminal-cyan">{devStage.iteration}</div>
               </div>
             ) : null}
+            {run.error && (
+              <div>
+                <div className="text-[9px] text-zinc-600 uppercase tracking-wider">Error</div>
+                <div className="text-xs text-terminal-red">{run.error}</div>
+              </div>
+            )}
             {run.deploy_url && (
               <div>
                 <div className="text-[9px] text-zinc-600 uppercase tracking-wider">Deploy URL</div>

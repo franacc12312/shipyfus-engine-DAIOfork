@@ -36,34 +36,7 @@ export class PipelineOrchestrator {
         });
       }
 
-      // Create product directory
-      const productDir = resolve(PRODUCTS_DIR, this.runId);
-      mkdirSync(productDir, { recursive: true });
-
-      // Fetch constraints
-      const constraints = await this.fetchConstraints();
-
-      // Stage 1: Ideation
-      if (this.cancelled) return;
-      const prd = await this.runIdeation(constraints.ideation, productDir);
-
-      // Stage 2: Planning
-      if (this.cancelled) return;
-      await this.runPlanning(prd, constraints.planning, productDir);
-
-      // Stage 3: Development
-      if (this.cancelled) return;
-      const devResult = await this.runDevelopment(constraints.development, productDir);
-
-      // Stage 4: Deployment
-      if (this.cancelled) return;
-      const deployResult = await this.runDeployment(constraints.deployment, productDir);
-
-      // Register product
-      await this.registerProduct(prd, deployResult, productDir);
-
-      // Mark run completed
-      await this.updateRunStatus('completed');
+      await this.runPipeline();
     } catch (err) {
       console.error(`Pipeline failed for run ${this.runId}:`, err);
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -75,6 +48,114 @@ export class PipelineOrchestrator {
     } finally {
       await this.runner.destroy();
     }
+  }
+
+  async resume(retryFailed = false): Promise<void> {
+    try {
+      console.log(`Resuming pipeline for run ${this.runId} (retryFailed=${retryFailed})`);
+      await this.updateRunStatus('running');
+      await db.from('runs').update({ error: null }).eq('id', this.runId);
+
+      // Always reset interrupted "running" stages back to pending
+      await db.from('run_stages').update({
+        status: 'pending',
+        started_at: null,
+        completed_at: null,
+      }).eq('run_id', this.runId).eq('status', 'running');
+
+      // Only reset legitimately "failed" stages if explicitly requested (manual retry)
+      if (retryFailed) {
+        await db.from('run_stages').update({
+          status: 'pending',
+          started_at: null,
+          completed_at: null,
+        }).eq('run_id', this.runId).eq('status', 'failed');
+      }
+
+      await this.runPipeline();
+    } catch (err) {
+      console.error(`Pipeline resume failed for run ${this.runId}:`, err);
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      await db.from('runs').update({
+        status: 'failed',
+        error: errorMsg,
+        completed_at: new Date().toISOString(),
+      }).eq('id', this.runId);
+    } finally {
+      await this.runner.destroy();
+    }
+  }
+
+  private async runPipeline(): Promise<void> {
+    // Read current stage statuses (supports both fresh and resumed runs)
+    const { data: stages } = await db.from('run_stages')
+      .select('*')
+      .eq('run_id', this.runId);
+
+    const stageMap = new Map(
+      (stages || []).map((s: { stage: string; status: string; output_context: unknown }) => [s.stage, s])
+    );
+
+    // Create product directory (idempotent)
+    const productDir = resolve(PRODUCTS_DIR, this.runId);
+    mkdirSync(productDir, { recursive: true });
+
+    // Fetch constraints
+    const constraints = await this.fetchConstraints();
+
+    // Helper to check stage status before running
+    const getStatus = (stage: string) =>
+      (stageMap.get(stage) as { status: string; output_context: unknown } | undefined);
+
+    // Stage 1: Ideation
+    let prd: ProductPRD;
+    const ideationStage = getStatus('ideation');
+    if (ideationStage?.status === 'completed' && ideationStage.output_context) {
+      console.log(`Run ${this.runId}: skipping completed ideation`);
+      prd = ideationStage.output_context as unknown as ProductPRD;
+    } else if (ideationStage?.status === 'failed') {
+      throw new Error('Ideation previously failed');
+    } else {
+      if (this.cancelled) return;
+      prd = await this.runIdeation(constraints.ideation, productDir);
+    }
+
+    // Stage 2: Planning
+    const planningStage = getStatus('planning');
+    if (planningStage?.status === 'completed') {
+      console.log(`Run ${this.runId}: skipping completed planning`);
+    } else if (planningStage?.status === 'failed') {
+      throw new Error('Planning previously failed');
+    } else {
+      if (this.cancelled) return;
+      await this.runPlanning(prd, constraints.planning, productDir);
+    }
+
+    // Stage 3: Development
+    const devStage = getStatus('development');
+    if (devStage?.status === 'completed') {
+      console.log(`Run ${this.runId}: skipping completed development`);
+    } else if (devStage?.status === 'failed') {
+      throw new Error('Development previously failed');
+    } else {
+      if (this.cancelled) return;
+      await this.runDevelopment(constraints.development, productDir);
+    }
+
+    // Stage 4: Deployment
+    const deployStage = getStatus('deployment');
+    if (deployStage?.status === 'completed') {
+      console.log(`Run ${this.runId}: skipping completed deployment`);
+    } else if (deployStage?.status === 'failed') {
+      throw new Error('Deployment previously failed');
+    } else {
+      if (this.cancelled) return;
+      const deployResult = await this.runDeployment(constraints.deployment, productDir);
+      await this.registerProduct(prd, deployResult, productDir);
+    }
+
+    // Mark run completed
+    await this.updateRunStatus('completed');
   }
 
   async cancel(): Promise<void> {
@@ -273,6 +354,19 @@ export function startPipeline(runId: string): void {
   orchestrator.execute()
     .catch((err) => {
       console.error(`Unhandled pipeline error for run ${runId}:`, err);
+    })
+    .finally(() => {
+      activeOrchestrators.delete(runId);
+    });
+}
+
+export function resumePipeline(runId: string, retryFailed = false): void {
+  const orchestrator = new PipelineOrchestrator(runId);
+  activeOrchestrators.set(runId, orchestrator);
+
+  orchestrator.resume(retryFailed)
+    .catch((err) => {
+      console.error(`Unhandled pipeline resume error for run ${runId}:`, err);
     })
     .finally(() => {
       activeOrchestrators.delete(runId);

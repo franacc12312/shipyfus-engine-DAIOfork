@@ -76,7 +76,7 @@ describe('useRealtimeRun logic', () => {
     mockGet.mockResolvedValue(mockRun);
 
     const { api } = await import('../lib/api');
-    const data = await api.get('/runs/run-1');
+    const data = await api.get<{ run_stages: unknown[] }>('/runs/run-1');
 
     expect(data.run_stages).toHaveLength(2);
   });
