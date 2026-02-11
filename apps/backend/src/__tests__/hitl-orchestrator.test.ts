@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const dbOps: { table: string; op: string; data?: any; filters?: any }[] = [];
 
 // Configurable mock responses
-let hitlConfig = { enabled: false, gate_after_ideation: true, gate_after_planning: true, gate_after_development: true };
+let hitlConfig = { enabled: false, gate_after_ideation: true, gate_after_branding: true, gate_after_planning: true, gate_after_development: true };
 let stageStatusResponses: Record<string, string> = {};
 let pollCount = 0;
 
@@ -13,6 +13,7 @@ vi.mock('../services/db.js', () => {
     const state: { table: string; filters: Record<string, string> } = { table: '', filters: {} };
     const chain: any = {
       eq: vi.fn((col: string, val: string) => { state.filters[col] = val; return chain; }),
+      in: vi.fn(() => chain),
       single: vi.fn(() => {
         if (state.table === 'hitl_config') {
           return Promise.resolve({ data: { ...hitlConfig }, error: null });
@@ -128,7 +129,7 @@ describe('checkApprovalGate', () => {
     vi.clearAllMocks();
     dbOps.length = 0;
     pollCount = 0;
-    hitlConfig = { enabled: false, gate_after_ideation: true, gate_after_planning: true, gate_after_development: true };
+    hitlConfig = { enabled: false, gate_after_ideation: true, gate_after_branding: true, gate_after_planning: true, gate_after_development: true };
     stageStatusResponses = {};
   });
 
@@ -187,9 +188,9 @@ describe('checkApprovalGate', () => {
     await expect(orch.checkApprovalGate('ideation')).rejects.toThrow('Retry requested');
   });
 
-  it('throws error when stage is rejected with cancel (status=failed)', async () => {
+  it('throws error when stage is rejected with cancel (status=cancelled)', async () => {
     hitlConfig.enabled = true;
-    stageStatusResponses.development = 'failed';
+    stageStatusResponses.development = 'cancelled';
 
     const orch = new PipelineOrchestrator('run-1');
     await expect(orch.checkApprovalGate('development')).rejects.toThrow('rejected');

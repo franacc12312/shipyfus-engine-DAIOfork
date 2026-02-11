@@ -68,13 +68,15 @@ export class PipelineOrchestrator {
 
       await this.runPipelineWithRetry();
     } catch (err) {
-      console.error(`Pipeline failed for run ${this.runId}:`, err);
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      await db.from('runs').update({
-        status: 'failed',
-        error: errorMsg,
-        completed_at: new Date().toISOString(),
-      }).eq('id', this.runId);
+      if (!this.cancelled) {
+        console.error(`Pipeline failed for run ${this.runId}:`, err);
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        await db.from('runs').update({
+          status: 'failed',
+          error: errorMsg,
+          completed_at: new Date().toISOString(),
+        }).eq('id', this.runId);
+      }
     } finally {
       await this.runner.destroy();
     }
@@ -87,12 +89,12 @@ export class PipelineOrchestrator {
       await this.resolveAgents();
       await db.from('runs').update({ error: null }).eq('id', this.runId);
 
-      // Always reset interrupted "running" stages back to pending
+      // Always reset interrupted "running" and "cancelled" stages back to pending
       await db.from('run_stages').update({
         status: 'pending',
         started_at: null,
         completed_at: null,
-      }).eq('run_id', this.runId).eq('status', 'running');
+      }).eq('run_id', this.runId).in('status', ['running', 'cancelled']);
 
       // Only reset legitimately "failed" stages if explicitly requested (manual retry)
       if (retryFailed) {
@@ -105,13 +107,15 @@ export class PipelineOrchestrator {
 
       await this.runPipelineWithRetry();
     } catch (err) {
-      console.error(`Pipeline resume failed for run ${this.runId}:`, err);
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      await db.from('runs').update({
-        status: 'failed',
-        error: errorMsg,
-        completed_at: new Date().toISOString(),
-      }).eq('id', this.runId);
+      if (!this.cancelled) {
+        console.error(`Pipeline resume failed for run ${this.runId}:`, err);
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        await db.from('runs').update({
+          status: 'failed',
+          error: errorMsg,
+          completed_at: new Date().toISOString(),
+        }).eq('id', this.runId);
+      }
     } finally {
       await this.runner.destroy();
     }
@@ -244,6 +248,12 @@ export class PipelineOrchestrator {
     this.cancelled = true;
     this.runner.killAll();
     await this.updateRunStatus('cancelled');
+
+    // Set any running/awaiting stages to cancelled
+    await db.from('run_stages').update({
+      status: 'cancelled',
+      completed_at: new Date().toISOString(),
+    }).eq('run_id', this.runId).in('status', ['running', 'awaiting_approval']);
   }
 
   private async runIdeation(config: IdeationConfig, productDir: string): Promise<ProductPRD> {
@@ -278,7 +288,7 @@ export class PipelineOrchestrator {
 
       return prd;
     } catch (err) {
-      await this.updateStageStatus('ideation', 'failed');
+      if (!this.cancelled) await this.updateStageStatus('ideation', 'failed');
       throw err;
     }
   }
@@ -381,7 +391,7 @@ export class PipelineOrchestrator {
 
       return { prd, domainName: winner.domain };
     } catch (err) {
-      await this.updateStageStatus('branding', 'failed');
+      if (!this.cancelled) await this.updateStageStatus('branding', 'failed');
       throw err;
     }
   }
@@ -417,7 +427,7 @@ export class PipelineOrchestrator {
         completed_at: new Date().toISOString(),
       }).eq('run_id', this.runId).eq('stage', 'planning');
     } catch (err) {
-      await this.updateStageStatus('planning', 'failed');
+      if (!this.cancelled) await this.updateStageStatus('planning', 'failed');
       throw err;
     }
   }
@@ -454,7 +464,7 @@ export class PipelineOrchestrator {
 
       return { iterations: result.iterations, completed: result.completed };
     } catch (err) {
-      await this.updateStageStatus('development', 'failed');
+      if (!this.cancelled) await this.updateStageStatus('development', 'failed');
       throw err;
     }
   }
@@ -488,7 +498,7 @@ export class PipelineOrchestrator {
 
       return { deployUrl };
     } catch (err) {
-      await this.updateStageStatus('deployment', 'failed');
+      if (!this.cancelled) await this.updateStageStatus('deployment', 'failed');
       throw err;
     }
   }
@@ -561,7 +571,7 @@ export class PipelineOrchestrator {
         throw new RetryStageError(stage);
       }
 
-      if (stageData.status === 'failed') {
+      if (stageData.status === 'cancelled' || stageData.status === 'failed') {
         // Rejected with cancel
         throw new Error(`Stage "${stage}" rejected — pipeline cancelled`);
       }
@@ -610,7 +620,7 @@ export class PipelineOrchestrator {
   private async updateStageStatus(stage: string, status: string): Promise<void> {
     const updates: Record<string, unknown> = { status };
     if (status === 'running') updates.started_at = new Date().toISOString();
-    if (status === 'completed' || status === 'failed') {
+    if (status === 'completed' || status === 'failed' || status === 'cancelled') {
       updates.completed_at = new Date().toISOString();
     }
     // awaiting_approval: no timestamp changes

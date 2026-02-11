@@ -117,12 +117,12 @@ router.post('/:id/retry', requireAdmin, async (req, res, next) => {
       return;
     }
 
-    if (run.status !== 'failed') {
+    if (run.status !== 'failed' && run.status !== 'cancelled') {
       res.status(400).json({ error: `Cannot retry run with status: ${run.status}` });
       return;
     }
 
-    resumePipeline(String(req.params.id));
+    resumePipeline(String(req.params.id), true);
 
     res.json({ status: 'resuming', id: req.params.id });
   } catch (err) {
@@ -284,10 +284,10 @@ router.post('/:id/stages/:stage/reject', requireAdmin, async (req, res, next) =>
     }
 
     if (action === 'cancel') {
-      // Cancel: mark stage as failed, run as cancelled
+      // Cancel: mark stage as cancelled, run as cancelled
       await db
         .from('run_stages')
-        .update({ status: 'failed' })
+        .update({ status: 'cancelled', completed_at: new Date().toISOString() })
         .eq('id', stageData.id);
 
       await db
