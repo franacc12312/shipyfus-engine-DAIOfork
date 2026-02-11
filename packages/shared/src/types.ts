@@ -98,7 +98,7 @@ export interface Product {
 
 export type Department = 'ideation' | 'branding' | 'planning' | 'development' | 'deployment';
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'awaiting_approval';
+export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped' | 'awaiting_approval';
 export type ProductStatus = 'built' | 'tested' | 'deployed' | 'archived';
 
 // Human in the Loop (HITL) types
