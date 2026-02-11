@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { to: '/constraints', label: 'Constraints', icon: '#' },
   { to: '/hitl', label: 'HITL Gates', icon: '||' },
   { to: '/products', label: 'Products', icon: '*' },
+  { to: '/team', label: 'Team', icon: '@' },
 ];
 
 export function Layout() {
