@@ -4,7 +4,7 @@ export const STAGES: readonly Department[] = ['ideation', 'planning', 'developme
 
 export const RUN_STATUSES: readonly RunStatus[] = ['queued', 'running', 'completed', 'failed', 'cancelled'] as const;
 
-export const STAGE_STATUSES: readonly StageStatus[] = ['pending', 'running', 'completed', 'failed', 'skipped'] as const;
+export const STAGE_STATUSES: readonly StageStatus[] = ['pending', 'running', 'completed', 'failed', 'skipped', 'awaiting_approval'] as const;
 
 export const EVENT_TYPES = {
   SYSTEM: 'system',

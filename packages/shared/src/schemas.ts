@@ -41,3 +41,27 @@ export const departmentSchema = z.enum(['ideation', 'planning', 'development', '
 export const updateConstraintSchema = z.object({
   config: z.record(z.unknown()),
 });
+
+// HITL schemas
+
+export const stageStatusSchema = z.enum(['pending', 'running', 'completed', 'failed', 'skipped', 'awaiting_approval']);
+
+export const hitlConfigSchema = z.object({
+  enabled: z.boolean(),
+  gate_after_ideation: z.boolean(),
+  gate_after_planning: z.boolean(),
+  gate_after_development: z.boolean(),
+});
+
+export const updateHitlConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  gate_after_ideation: z.boolean().optional(),
+  gate_after_planning: z.boolean().optional(),
+  gate_after_development: z.boolean().optional(),
+});
+
+export const hitlGateActionSchema = z.enum(['approve', 'retry', 'cancel']);
+
+export const rejectStageSchema = z.object({
+  action: z.enum(['retry', 'cancel']),
+});

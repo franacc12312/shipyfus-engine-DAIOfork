@@ -5,6 +5,7 @@ import { useRealtimeLogs } from '../hooks/useRealtimeLogs';
 import { StageIndicator } from '../components/StageIndicator';
 import { LogStream } from '../components/LogStream';
 import { AdminGate } from '../components/AdminGate';
+import { ApprovalGate } from '../components/ApprovalGate';
 import { api } from '../lib/api';
 import { STAGES } from '@daio/shared';
 
@@ -119,6 +120,11 @@ export function RunDetail() {
       <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-4 mb-4">
         <StageIndicator stages={run.run_stages || []} />
       </div>
+
+      {/* Approval gate (shown when any stage is awaiting approval) */}
+      {run.run_stages?.filter((s) => s.status === 'awaiting_approval').map((s) => (
+        <ApprovalGate key={s.id} runId={run.id} stage={s} />
+      ))}
 
       {/* Info + Logs layout */}
       <div className="grid grid-cols-4 gap-4">

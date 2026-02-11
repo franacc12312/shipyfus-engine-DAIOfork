@@ -9,6 +9,7 @@ vi.mock('../services/db.js', () => {
     single: vi.fn().mockResolvedValue({ data: null, error: null }),
     select: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
   };
 
   return {
@@ -35,6 +36,19 @@ vi.mock('../services/db.js', () => {
                   { department: 'deployment', config: { provider: 'vercel', auto_deploy: true } },
                 ],
                 error: null,
+              }),
+            };
+          }
+          if (table === 'hitl_config') {
+            // Return HITL disabled by default (gates are skipped in existing tests)
+            return {
+              ...chainable,
+              limit: vi.fn().mockReturnValue({
+                ...chainable,
+                single: vi.fn().mockResolvedValue({
+                  data: { enabled: false, gate_after_ideation: true, gate_after_planning: true, gate_after_development: true },
+                  error: null,
+                }),
               }),
             };
           }
