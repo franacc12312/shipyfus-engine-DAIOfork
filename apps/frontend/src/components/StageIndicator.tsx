@@ -49,11 +49,13 @@ export function StageIndicator({ stages }: StageIndicatorProps) {
                   className={`w-3 h-3 rounded-full flex items-center justify-center text-[8px] font-bold ${
                     status === 'completed' ? 'bg-terminal-green text-zinc-950' :
                     status === 'running' ? 'bg-terminal-green/30 border border-terminal-green pulse-dot' :
+                    status === 'awaiting_approval' ? 'bg-terminal-amber/30 border border-terminal-amber pulse-dot' :
                     status === 'failed' ? 'bg-terminal-red/30 border border-terminal-red' :
                     'bg-zinc-800 border border-zinc-600'
                   }`}
                 >
                   {status === 'completed' && '✓'}
+                  {status === 'awaiting_approval' && '!'}
                   {status === 'failed' && '×'}
                 </div>
 
@@ -61,11 +63,15 @@ export function StageIndicator({ stages }: StageIndicatorProps) {
                   className={`text-[10px] tracking-wider ${
                     status === 'completed' ? 'text-terminal-green' :
                     status === 'running' ? 'text-terminal-green' :
+                    status === 'awaiting_approval' ? 'text-terminal-amber' :
                     status === 'failed' ? 'text-terminal-red' :
                     'text-zinc-500'
                   }`}
                 >
                   {STAGE_LABELS[stageName]}
+                  {status === 'awaiting_approval' && (
+                    <span className="ml-1 text-[8px] text-terminal-amber/70">AWAITING</span>
+                  )}
                 </span>
               </div>
 
@@ -82,6 +88,9 @@ export function StageIndicator({ stages }: StageIndicatorProps) {
                 )}
                 {status === 'running' && stage && (
                   <span className="text-terminal-green">{getDuration(stage)}</span>
+                )}
+                {status === 'awaiting_approval' && stage && (
+                  <span className="text-terminal-amber">{getDuration(stage)}</span>
                 )}
               </div>
             </div>

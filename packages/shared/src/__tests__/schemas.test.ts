@@ -7,6 +7,11 @@ import {
   departmentSchema,
   agentSchema,
   agentCharacteristicsSchema,
+  stageStatusSchema,
+  hitlConfigSchema,
+  updateHitlConfigSchema,
+  hitlGateActionSchema,
+  rejectStageSchema,
 } from '../schemas.js';
 import { STAGES, RUN_STATUSES, STAGE_STATUSES, AGENT_SLUGS, STAGE_AGENT_MAP } from '../constants.js';
 
@@ -119,12 +124,88 @@ describe('constants', () => {
     expect(RUN_STATUSES).toContain('cancelled');
   });
 
-  it('STAGE_STATUSES has all expected values', () => {
+  it('STAGE_STATUSES has all expected values including awaiting_approval', () => {
     expect(STAGE_STATUSES).toContain('pending');
     expect(STAGE_STATUSES).toContain('running');
     expect(STAGE_STATUSES).toContain('completed');
     expect(STAGE_STATUSES).toContain('failed');
     expect(STAGE_STATUSES).toContain('skipped');
+    expect(STAGE_STATUSES).toContain('awaiting_approval');
+  });
+});
+
+describe('stageStatusSchema', () => {
+  it('validates all stage statuses including awaiting_approval', () => {
+    for (const status of ['pending', 'running', 'completed', 'failed', 'skipped', 'awaiting_approval']) {
+      expect(stageStatusSchema.parse(status)).toBe(status);
+    }
+  });
+
+  it('rejects invalid stage status', () => {
+    expect(() => stageStatusSchema.parse('paused')).toThrow();
+  });
+});
+
+describe('hitlConfigSchema', () => {
+  it('validates a complete HITL config', () => {
+    const config = {
+      enabled: true,
+      gate_after_ideation: true,
+      gate_after_planning: false,
+      gate_after_development: true,
+    };
+    expect(hitlConfigSchema.parse(config)).toEqual(config);
+  });
+
+  it('rejects config with missing required fields', () => {
+    expect(() => hitlConfigSchema.parse({ enabled: true })).toThrow();
+  });
+
+  it('rejects non-boolean values', () => {
+    expect(() =>
+      hitlConfigSchema.parse({
+        enabled: 'yes',
+        gate_after_ideation: true,
+        gate_after_planning: true,
+        gate_after_development: true,
+      })
+    ).toThrow();
+  });
+});
+
+describe('updateHitlConfigSchema', () => {
+  it('accepts partial updates', () => {
+    expect(updateHitlConfigSchema.parse({ enabled: true })).toEqual({ enabled: true });
+  });
+
+  it('accepts empty object (no changes)', () => {
+    expect(updateHitlConfigSchema.parse({})).toEqual({});
+  });
+});
+
+describe('hitlGateActionSchema', () => {
+  it('validates all gate actions', () => {
+    for (const action of ['approve', 'retry', 'cancel']) {
+      expect(hitlGateActionSchema.parse(action)).toBe(action);
+    }
+  });
+
+  it('rejects invalid action', () => {
+    expect(() => hitlGateActionSchema.parse('skip')).toThrow();
+  });
+});
+
+describe('rejectStageSchema', () => {
+  it('validates retry action', () => {
+    expect(rejectStageSchema.parse({ action: 'retry' })).toEqual({ action: 'retry' });
+  });
+
+  it('validates cancel action', () => {
+    expect(rejectStageSchema.parse({ action: 'cancel' })).toEqual({ action: 'cancel' });
+  });
+
+  it('rejects approve as a reject action', () => {
+    expect(() => rejectStageSchema.parse({ action: 'approve' })).toThrow();
   });
 
   it('AGENT_SLUGS has all 4 agent slugs', () => {

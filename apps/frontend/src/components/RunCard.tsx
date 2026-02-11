@@ -20,6 +20,8 @@ function getElapsed(run: Run): string {
 }
 
 function getCurrentStage(stages: any[]): string {
+  const awaiting = stages?.find((s: any) => s.status === 'awaiting_approval');
+  if (awaiting) return awaiting.stage;
   const running = stages?.find((s: any) => s.status === 'running');
   if (running) return running.stage;
   const lastCompleted = stages
@@ -29,19 +31,33 @@ function getCurrentStage(stages: any[]): string {
   return 'queued';
 }
 
+function hasAwaitingApproval(stages: any[]): boolean {
+  return stages?.some((s: any) => s.status === 'awaiting_approval') || false;
+}
+
 export function RunCard({ run }: { run: Run & { run_stages?: any[] } }) {
   const currentStage = getCurrentStage(run.run_stages || []);
   const devStage = run.run_stages?.find((s: any) => s.stage === 'development');
+  const awaiting = hasAwaitingApproval(run.run_stages || []);
 
   return (
     <Link
       to={`/runs/${run.id}`}
-      className="block bg-zinc-950 border border-zinc-800 rounded-lg p-4 hover:border-zinc-600 transition-colors"
+      className={`block bg-zinc-950 border rounded-lg p-4 hover:border-zinc-600 transition-colors ${
+        awaiting ? 'border-terminal-amber/40' : 'border-zinc-800'
+      }`}
     >
       <div className="flex items-center justify-between mb-2">
-        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${STATUS_COLORS[run.status] || STATUS_COLORS.queued}`}>
-          {run.status}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${STATUS_COLORS[run.status] || STATUS_COLORS.queued}`}>
+            {run.status}
+          </span>
+          {awaiting && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-terminal-amber/20 text-terminal-amber font-bold uppercase tracking-wider animate-pulse">
+              AWAITING
+            </span>
+          )}
+        </div>
         <span className="text-[10px] text-zinc-600">{getElapsed(run)}</span>
       </div>
 

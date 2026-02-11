@@ -9,6 +9,7 @@ import constraintsRouter from './routes/constraints.js';
 import runsRouter from './routes/runs.js';
 import productsRouter from './routes/products.js';
 import agentsRouter from './routes/agents.js';
+import hitlRouter from './routes/hitl.js';
 
 const app = express();
 
@@ -20,10 +21,13 @@ app.use('/api/constraints', constraintsRouter);
 app.use('/api/runs', runsRouter);
 app.use('/api/products', productsRouter);
 app.use('/api/agents', agentsRouter);
+app.use('/api/hitl-config', hitlRouter);
 
 app.use(errorHandler);
 
 // Resume orphaned runs on startup (runs interrupted by server restart)
+// Runs with stages in 'awaiting_approval' state are preserved — the resumed
+// orchestrator will resume polling for approval rather than marking them failed.
 async function resumeOrphanedRuns() {
   const { data: orphanedRuns } = await db
     .from('runs')
