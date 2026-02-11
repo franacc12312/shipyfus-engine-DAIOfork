@@ -101,3 +101,51 @@ describe('api', () => {
     await expect(api.get('/runs')).rejects.toThrow('Unauthorized');
   });
 });
+
+describe('verifyPassword', () => {
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    Object.keys(storage).forEach((k) => delete storage[k]);
+    fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => storage[key] ?? null,
+      setItem: (key: string, value: string) => { storage[key] = value; },
+      removeItem: (key: string) => { delete storage[key]; },
+    });
+  });
+
+  it('returns true for valid password', async () => {
+    fetchSpy.mockResolvedValue({ ok: true, json: () => Promise.resolve({ valid: true }) });
+
+    const { verifyPassword } = await import('../lib/api');
+    expect(await verifyPassword('correct-pw')).toBe(true);
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/health/verify',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'Authorization': 'Bearer correct-pw' }),
+      }),
+    );
+  });
+
+  it('returns false for invalid password', async () => {
+    fetchSpy.mockResolvedValue({ ok: false, status: 401, statusText: 'Unauthorized' });
+
+    const { verifyPassword } = await import('../lib/api');
+    expect(await verifyPassword('wrong-pw')).toBe(false);
+  });
+
+  it('returns false on network error', async () => {
+    fetchSpy.mockRejectedValue(new Error('Network error'));
+
+    const { verifyPassword } = await import('../lib/api');
+    expect(await verifyPassword('any')).toBe(false);
+  });
+});
