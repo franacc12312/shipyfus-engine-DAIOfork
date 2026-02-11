@@ -58,9 +58,20 @@ Hosted Supabase (project ref: yxwkvbvbugknxdrvpzlq). Tables: users, constraints,
 ## Environment Variables
 See `.env.example` for all required variables. Key ones: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ADMIN_PASSWORD, OWNER_USER_ID, VERCEL_TOKEN.
 
+## Worktree Policy
+
+**ALWAYS work in a git worktree** (`.worktrees/` directory), never directly on `main`. Each task/issue should have its own worktree. If context has been lost and you're unsure which worktree to use, try to infer it from the current task or Linear issue — if you can't, ask the user. Do not make changes on `main` unless the user explicitly tells you to.
+
 ## Conventions
 - TypeScript everywhere, ESM modules
 - Zod for runtime validation
 - Express 5 with async route handlers
 - Supabase service_role for backend writes, anon key for frontend reads
 - Dark terminal aesthetic (zinc-950 backgrounds, green/cyan accents, monospace fonts)
+
+## Linear Integration
+
+- **Workspace**: fioris
+- **Team**: DAIO
+- **Project URL**: https://linear.app/fioris/team/DAI/active
+- **Issue Identifier**: DAI
