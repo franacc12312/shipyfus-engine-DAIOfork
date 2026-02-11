@@ -70,11 +70,12 @@ export const agentSchema = z.object({
 
 // HITL schemas
 
-export const stageStatusSchema = z.enum(['pending', 'running', 'completed', 'failed', 'skipped', 'awaiting_approval']);
+export const stageStatusSchema = z.enum(['pending', 'running', 'completed', 'failed', 'cancelled', 'skipped', 'awaiting_approval']);
 
 export const hitlConfigSchema = z.object({
   enabled: z.boolean(),
   gate_after_ideation: z.boolean(),
+  gate_after_branding: z.boolean(),
   gate_after_planning: z.boolean(),
   gate_after_development: z.boolean(),
 });
@@ -82,6 +83,7 @@ export const hitlConfigSchema = z.object({
 export const updateHitlConfigSchema = z.object({
   enabled: z.boolean().optional(),
   gate_after_ideation: z.boolean().optional(),
+  gate_after_branding: z.boolean().optional(),
   gate_after_planning: z.boolean().optional(),
   gate_after_development: z.boolean().optional(),
 });
