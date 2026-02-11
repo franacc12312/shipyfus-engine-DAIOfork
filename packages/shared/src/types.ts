@@ -98,8 +98,22 @@ export interface Product {
 
 export type Department = 'ideation' | 'branding' | 'planning' | 'development' | 'deployment';
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'awaiting_approval';
 export type ProductStatus = 'built' | 'tested' | 'deployed' | 'archived';
+
+// Human in the Loop (HITL) types
+
+export interface HitlConfig {
+  id: string;
+  enabled: boolean;
+  gate_after_ideation: boolean;
+  gate_after_planning: boolean;
+  gate_after_development: boolean;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+export type HitlGateAction = 'approve' | 'retry' | 'cancel';
 
 // Constraint config types per department
 

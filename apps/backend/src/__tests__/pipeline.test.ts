@@ -40,6 +40,19 @@ vi.mock('../services/db.js', () => {
               }),
             };
           }
+          if (table === 'hitl_config') {
+            // Return HITL disabled by default (gates are skipped in existing tests)
+            return {
+              ...chainable,
+              limit: vi.fn().mockReturnValue({
+                ...chainable,
+                single: vi.fn().mockResolvedValue({
+                  data: { enabled: false, gate_after_ideation: true, gate_after_planning: true, gate_after_development: true },
+                  error: null,
+                }),
+              }),
+            };
+          }
           return chainable;
         },
       }),

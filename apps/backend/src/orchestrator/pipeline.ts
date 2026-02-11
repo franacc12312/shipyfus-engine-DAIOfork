@@ -11,9 +11,18 @@ import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
 import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js';
 import { rankCandidates, purchaseDomain, configureDNSForVercel } from '@daio/brand';
 import type { BrandCandidate, PorkbunConfig } from '@daio/brand';
-import type { IdeationConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD } from '@daio/shared';
+import type { IdeationConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD, Department, HitlConfig } from '@daio/shared';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
+
+export class RetryStageError extends Error {
+  stage: string;
+  constructor(stage: string) {
+    super(`Retry requested for stage: ${stage}`);
+    this.name = 'RetryStageError';
+    this.stage = stage;
+  }
+}
 
 export class PipelineOrchestrator {
   private runner: AgentRunner;
@@ -57,7 +66,7 @@ export class PipelineOrchestrator {
         });
       }
 
-      await this.runPipeline();
+      await this.runPipelineWithRetry();
     } catch (err) {
       console.error(`Pipeline failed for run ${this.runId}:`, err);
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -94,7 +103,7 @@ export class PipelineOrchestrator {
         }).eq('run_id', this.runId).eq('status', 'failed');
       }
 
-      await this.runPipeline();
+      await this.runPipelineWithRetry();
     } catch (err) {
       console.error(`Pipeline resume failed for run ${this.runId}:`, err);
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -105,6 +114,23 @@ export class PipelineOrchestrator {
       }).eq('id', this.runId);
     } finally {
       await this.runner.destroy();
+    }
+  }
+
+  private async runPipelineWithRetry(): Promise<void> {
+    // Loop handles RetryStageError: when a stage is rejected with "retry",
+    // runPipeline re-reads stage statuses from DB and re-runs the pending stage
+    while (!this.cancelled) {
+      try {
+        await this.runPipeline();
+        return; // Pipeline completed successfully
+      } catch (err) {
+        if (err instanceof RetryStageError) {
+          console.log(`Run ${this.runId}: retrying stage ${err.stage}`);
+          continue; // Re-run the pipeline (it will skip completed stages)
+        }
+        throw err; // Re-throw non-retry errors
+      }
     }
   }
 
@@ -135,11 +161,16 @@ export class PipelineOrchestrator {
     if (ideationStage?.status === 'completed' && ideationStage.output_context) {
       console.log(`Run ${this.runId}: skipping completed ideation`);
       prd = ideationStage.output_context as unknown as ProductPRD;
+    } else if (ideationStage?.status === 'awaiting_approval') {
+      // Resume polling for approval
+      prd = ideationStage.output_context as unknown as ProductPRD;
+      await this.checkApprovalGate('ideation');
     } else if (ideationStage?.status === 'failed') {
       throw new Error('Ideation previously failed');
     } else {
       if (this.cancelled) return;
       prd = await this.runIdeation(constraints.ideation, productDir);
+      await this.checkApprovalGate('ideation');
     }
 
     // Stage 2: Branding (Prism picks name + CFO buys domain atomically)
@@ -150,6 +181,11 @@ export class PipelineOrchestrator {
       const ctx = brandingStage.output_context as { productName?: string; domain?: string };
       if (ctx.productName) prd.productName = ctx.productName;
       domainName = ctx.domain ?? null;
+    } else if (brandingStage?.status === 'awaiting_approval') {
+      const ctx = brandingStage.output_context as { productName?: string; domain?: string } | null;
+      if (ctx?.productName) prd.productName = ctx.productName;
+      domainName = ctx?.domain ?? null;
+      await this.checkApprovalGate('branding');
     } else if (brandingStage?.status === 'failed') {
       throw new Error('Branding previously failed');
     } else {
@@ -157,31 +193,38 @@ export class PipelineOrchestrator {
       const brandResult = await this.runBranding(prd, constraints.branding, productDir);
       prd = brandResult.prd;
       domainName = brandResult.domainName;
+      await this.checkApprovalGate('branding');
     }
 
     // Stage 3: Planning
     const planningStage = getStatus('planning');
     if (planningStage?.status === 'completed') {
       console.log(`Run ${this.runId}: skipping completed planning`);
+    } else if (planningStage?.status === 'awaiting_approval') {
+      await this.checkApprovalGate('planning');
     } else if (planningStage?.status === 'failed') {
       throw new Error('Planning previously failed');
     } else {
       if (this.cancelled) return;
       await this.runPlanning(prd, constraints.planning, productDir);
+      await this.checkApprovalGate('planning');
     }
 
     // Stage 4: Development
     const devStage = getStatus('development');
     if (devStage?.status === 'completed') {
       console.log(`Run ${this.runId}: skipping completed development`);
+    } else if (devStage?.status === 'awaiting_approval') {
+      await this.checkApprovalGate('development');
     } else if (devStage?.status === 'failed') {
       throw new Error('Development previously failed');
     } else {
       if (this.cancelled) return;
       await this.runDevelopment(constraints.development, productDir);
+      await this.checkApprovalGate('development');
     }
 
-    // Stage 5: Deployment
+    // Stage 5: Deployment (no gate after — it's the last stage)
     const deployStage = getStatus('deployment');
     if (deployStage?.status === 'completed') {
       console.log(`Run ${this.runId}: skipping completed deployment`);
@@ -468,6 +511,77 @@ export class PipelineOrchestrator {
     }
   }
 
+  async checkApprovalGate(stage: Department): Promise<void> {
+    // Read HITL config
+    const { data: hitlConfig } = await db
+      .from('hitl_config')
+      .select('*')
+      .limit(1)
+      .single();
+
+    if (!hitlConfig || !hitlConfig.enabled) return;
+
+    const config = hitlConfig as HitlConfig;
+    const gateKey = `gate_after_${stage}` as keyof HitlConfig;
+    if (!config[gateKey]) return;
+
+    // Set stage to awaiting_approval
+    await this.updateStageStatus(stage, 'awaiting_approval');
+    await this.insertLog(stage, `Stage "${stage}" complete. Waiting for human approval before proceeding...`);
+
+    // Poll every 3s until approved, retried, or cancelled
+    const POLL_INTERVAL = 3000;
+    while (!this.cancelled) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
+
+      if (this.cancelled) {
+        throw new Error('Pipeline cancelled while awaiting approval');
+      }
+
+      const { data: stageData } = await db
+        .from('run_stages')
+        .select('status')
+        .eq('run_id', this.runId)
+        .eq('stage', stage)
+        .single();
+
+      if (!stageData) {
+        throw new Error(`Stage ${stage} not found during approval polling`);
+      }
+
+      if (stageData.status === 'completed') {
+        // Approved — continue pipeline
+        await this.insertLog(stage, `Approval received for "${stage}". Continuing pipeline.`);
+        return;
+      }
+
+      if (stageData.status === 'pending') {
+        // Rejected with retry — re-run the stage
+        await this.insertLog(stage, `Retry requested for "${stage}". Re-running stage.`);
+        throw new RetryStageError(stage);
+      }
+
+      if (stageData.status === 'failed') {
+        // Rejected with cancel
+        throw new Error(`Stage "${stage}" rejected — pipeline cancelled`);
+      }
+
+      // Still awaiting_approval — keep polling
+    }
+
+    throw new Error('Pipeline cancelled while awaiting approval');
+  }
+
+  private async insertLog(stage: string, content: string): Promise<void> {
+    await db.from('logs').insert({
+      run_id: this.runId,
+      stage,
+      iteration: 0,
+      event_type: 'system',
+      content,
+    });
+  }
+
   private async fetchConstraints() {
     const { data } = await db.from('constraints').select('*');
     if (!data || data.length === 0) {
@@ -499,6 +613,7 @@ export class PipelineOrchestrator {
     if (status === 'completed' || status === 'failed') {
       updates.completed_at = new Date().toISOString();
     }
+    // awaiting_approval: no timestamp changes
     await db.from('run_stages').update(updates).eq('run_id', this.runId).eq('stage', stage);
   }
 }
