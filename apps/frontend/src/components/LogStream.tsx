@@ -20,9 +20,10 @@ export function LogStream({ logs, isRunning, stageFilter }: LogStreamProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
-  const filteredLogs = stageFilter
+  const filteredLogs = (stageFilter
     ? logs.filter((l) => l.stage === stageFilter)
-    : logs;
+    : logs
+  ).filter((l) => l.content?.trim());
 
   // Auto-scroll behavior
   useEffect(() => {

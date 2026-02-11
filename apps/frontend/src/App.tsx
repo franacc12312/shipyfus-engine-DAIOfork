@@ -5,6 +5,7 @@ import { Dashboard } from './pages/Dashboard';
 import { RunDetail } from './pages/RunDetail';
 import { Constraints } from './pages/Constraints';
 import { Products } from './pages/Products';
+import { HitlConfig } from './pages/HitlConfig';
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
           <Route path="/" element={<ErrorBoundary><Dashboard /></ErrorBoundary>} />
           <Route path="/runs/:id" element={<ErrorBoundary><RunDetail /></ErrorBoundary>} />
           <Route path="/constraints" element={<ErrorBoundary><Constraints /></ErrorBoundary>} />
+          <Route path="/hitl" element={<ErrorBoundary><HitlConfig /></ErrorBoundary>} />
           <Route path="/products" element={<ErrorBoundary><Products /></ErrorBoundary>} />
         </Route>
       </Routes>

@@ -9,6 +9,7 @@ vi.mock('../services/db.js', () => {
     single: vi.fn().mockResolvedValue({ data: null, error: null }),
     select: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockResolvedValue({ data: [{ id: 'cfo-agent-id' }] }),
   };
 
   return {
@@ -30,11 +31,25 @@ vi.mock('../services/db.js', () => {
               then: (resolve: any) => resolve({
                 data: [
                   { department: 'ideation', config: { platform: 'web', audience: 'consumer', complexity: 'simple' } },
+                  { department: 'branding', config: { max_domain_price: 15, preferred_tlds: ['xyz'] } },
                   { department: 'planning', config: { max_phases: 5, require_tests: true, max_files_per_phase: 10 } },
                   { department: 'development', config: { language: 'typescript', framework: 'react', max_files: 20, max_iterations: 3, max_budget_usd: 5 } },
                   { department: 'deployment', config: { provider: 'vercel', auto_deploy: true } },
                 ],
                 error: null,
+              }),
+            };
+          }
+          if (table === 'hitl_config') {
+            // Return HITL disabled by default (gates are skipped in existing tests)
+            return {
+              ...chainable,
+              limit: vi.fn().mockReturnValue({
+                ...chainable,
+                single: vi.fn().mockResolvedValue({
+                  data: { enabled: false, gate_after_ideation: true, gate_after_planning: true, gate_after_development: true },
+                  error: null,
+                }),
               }),
             };
           }
@@ -49,7 +64,40 @@ vi.mock('../env.js', () => ({
   env: {
     VERCEL_TOKEN: 'test-token',
     OWNER_USER_ID: '00000000-0000-0000-0000-000000000001',
+    PORKBUN_API_KEY: 'pk1_test',
+    PORKBUN_API_SECRET: 'sk1_test',
   },
+}));
+
+// Mock @daio/brand
+vi.mock('@daio/brand', () => ({
+  rankCandidates: vi.fn().mockResolvedValue([
+    {
+      rank: 1,
+      name: 'TestBrand',
+      domain: 'testbrand.xyz',
+      tld: 'xyz',
+      strategy: 'invented',
+      price: 2,
+      reasoning: 'Great name',
+      score: 85,
+      alternatives: [],
+    },
+  ]),
+  purchaseDomain: vi.fn().mockResolvedValue({
+    domain: 'testbrand.xyz',
+    status: 'purchased',
+    price: 2,
+    registrar: 'porkbun',
+  }),
+  configureDNSForVercel: vi.fn().mockResolvedValue({
+    domain: 'testbrand.xyz',
+    records: [
+      { type: 'A', name: '@', content: '76.76.21.21', success: true },
+      { type: 'CNAME', name: 'www', content: 'cname.vercel-dns.com', success: true },
+    ],
+    allSuccess: true,
+  }),
 }));
 
 // Mock AgentRunner
@@ -84,6 +132,7 @@ describe('PipelineOrchestrator', () => {
       text: 'ideation result',
       json: {
         productName: 'TestProduct',
+        workingTitle: 'TestProduct',
         productDescription: 'A test product',
         targetUser: 'devs',
         problemStatement: 'testing',
@@ -95,6 +144,21 @@ describe('PipelineOrchestrator', () => {
         uniqueValue: 'unique',
       },
       cost: 0.1,
+    })
+    // Branding (Prism): returns brand candidates
+    .mockResolvedValueOnce({
+      text: 'brand candidates',
+      json: [
+        { name: 'TestBrand', strategy: 'invented', reasoning: 'Great name' },
+        { name: 'CoolApp', strategy: 'compound', reasoning: 'Descriptive' },
+      ],
+      cost: 0.05,
+    })
+    // Branding (CFO): narration
+    .mockResolvedValueOnce({
+      text: 'domain purchased',
+      json: { domain: 'testbrand.xyz', price: 2, registrar: 'porkbun', status: 'purchased' },
+      cost: 0.01,
     })
     // Planning
     .mockResolvedValueOnce({
@@ -119,14 +183,14 @@ describe('PipelineOrchestrator', () => {
     });
   });
 
-  it('creates run_stages for all 4 stages', async () => {
+  it('creates run_stages for all 5 stages', async () => {
     const orch = new PipelineOrchestrator('run-1');
     await orch.execute();
 
     const stageInserts = dbOps.filter((op) => op.table === 'run_stages' && op.op === 'insert');
-    expect(stageInserts).toHaveLength(4);
+    expect(stageInserts).toHaveLength(5);
     const stages = stageInserts.map((op) => op.data.stage);
-    expect(stages).toEqual(['ideation', 'planning', 'development', 'deployment']);
+    expect(stages).toEqual(['ideation', 'branding', 'planning', 'development', 'deployment']);
   });
 
   it('updates run status to running then completed', async () => {
@@ -152,11 +216,11 @@ describe('PipelineOrchestrator', () => {
     expect(failUpdate!.data.error).toContain('Ideation failed');
   });
 
-  it('calls runOnce for ideation, planning, deployment', async () => {
+  it('calls runOnce for ideation, branding (x2), planning, deployment', async () => {
     const orch = new PipelineOrchestrator('run-1');
     await orch.execute();
 
-    expect(mockRunOnce).toHaveBeenCalledTimes(3); // ideation, planning, deployment
+    expect(mockRunOnce).toHaveBeenCalledTimes(5); // ideation, branding prism, branding cfo, planning, deployment
   });
 
   it('calls runLoop for development', async () => {
@@ -174,8 +238,9 @@ describe('PipelineOrchestrator', () => {
 
     const productInsert = dbOps.find((op) => op.table === 'products' && op.op === 'insert');
     expect(productInsert).toBeDefined();
-    expect(productInsert!.data.name).toBe('TestProduct');
+    expect(productInsert!.data.name).toBe('TestBrand'); // Branding stage renames from TestProduct
     expect(productInsert!.data.deploy_url).toBe('https://test.vercel.app');
+    expect(productInsert!.data.domain_name).toBe('testbrand.xyz');
   });
 
   it('calls destroy on runner when done', async () => {
@@ -183,5 +248,60 @@ describe('PipelineOrchestrator', () => {
     await orch.execute();
 
     expect(mockDestroy).toHaveBeenCalled();
+  });
+
+  it('runs branding stage after ideation', async () => {
+    const orch = new PipelineOrchestrator('run-1');
+    await orch.execute();
+
+    // Verify branding stage was updated to completed
+    const brandingUpdates = dbOps.filter(
+      (op) => op.table === 'run_stages' && op.op === 'update' && op.data.status === 'completed'
+    );
+    // Should have completed stages for: ideation, branding, planning, development, deployment
+    expect(brandingUpdates.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('updates domain_name on run after branding', async () => {
+    const orch = new PipelineOrchestrator('run-1');
+    await orch.execute();
+
+    const domainUpdate = dbOps.find(
+      (op) => op.table === 'runs' && op.op === 'update' && op.data.domain_name
+    );
+    expect(domainUpdate).toBeDefined();
+    expect(domainUpdate!.data.domain_name).toBe('testbrand.xyz');
+  });
+
+  it('handles branding failure and marks run failed', async () => {
+    mockRunOnce.mockReset();
+    // Ideation succeeds
+    mockRunOnce.mockResolvedValueOnce({
+      text: 'ideation result',
+      json: {
+        productName: 'TestProduct',
+        workingTitle: 'TestProduct',
+        productDescription: 'A test product',
+        targetUser: 'devs',
+        problemStatement: 'testing',
+        coreFunctionality: ['f1'],
+        technicalRequirements: 'ts',
+        suggestedTechStack: { framework: 'React', language: 'TypeScript', keyDependencies: [] },
+        mvpScope: 'basic',
+        successCriteria: ['works'],
+        uniqueValue: 'unique',
+      },
+      cost: 0.1,
+    });
+    // Branding fails
+    mockRunOnce.mockRejectedValueOnce(new Error('Branding failed'));
+
+    const orch = new PipelineOrchestrator('run-fail');
+    await orch.execute();
+
+    const failUpdate = dbOps.find(
+      (op) => op.table === 'runs' && op.op === 'update' && op.data.status === 'failed'
+    );
+    expect(failUpdate).toBeDefined();
   });
 });

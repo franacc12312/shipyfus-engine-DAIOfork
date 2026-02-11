@@ -15,15 +15,29 @@ export function ProductCard({ product }: { product: Product }) {
         </span>
       </div>
 
-      <p className="text-xs text-zinc-400 mb-3 line-clamp-2">{product.description}</p>
+      <p className="text-xs text-zinc-400 mb-3 line-clamp-2">
+        {typeof product.description === 'string' ? product.description : ''}
+      </p>
 
-      {product.tech_stack && (
+      {product.tech_stack && typeof product.tech_stack === 'object' && (
         <div className="flex flex-wrap gap-1 mb-3">
-          {typeof product.tech_stack === 'object' && 'suggested' in (product.tech_stack as Record<string, unknown>) && (
+          {!!(product.tech_stack as Record<string, unknown>).language && (
             <span className="text-[9px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded">
-              {(product.tech_stack as { suggested: string }).suggested}
+              {String((product.tech_stack as Record<string, unknown>).language)}
             </span>
           )}
+          {!!(product.tech_stack as Record<string, unknown>).framework && (
+            <span className="text-[9px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded">
+              {String((product.tech_stack as Record<string, unknown>).framework)}
+            </span>
+          )}
+          {Array.isArray((product.tech_stack as Record<string, unknown>).keyDependencies) &&
+            ((product.tech_stack as Record<string, unknown>).keyDependencies as string[]).map((dep) => (
+              <span key={dep} className="text-[9px] px-1.5 py-0.5 bg-zinc-800 text-zinc-400 rounded">
+                {dep}
+              </span>
+            ))
+          }
         </div>
       )}
 

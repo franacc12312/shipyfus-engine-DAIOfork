@@ -8,6 +8,7 @@ import { LogStream } from '../components/LogStream';
 import { ChatStream } from '../components/ChatStream';
 import { ViewToggle } from '../components/ViewToggle';
 import { AdminGate } from '../components/AdminGate';
+import { ApprovalGate } from '../components/ApprovalGate';
 import { api } from '../lib/api';
 import { STAGES } from '@daio/shared';
 
@@ -125,6 +126,11 @@ export function RunDetail() {
         <StageIndicator stages={run.run_stages || []} />
       </div>
 
+      {/* Approval gate (shown when any stage is awaiting approval) */}
+      {run.run_stages?.filter((s) => s.status === 'awaiting_approval').map((s) => (
+        <ApprovalGate key={s.id} runId={run.id} stage={s} />
+      ))}
+
       {/* Info + Logs layout */}
       <div className="grid grid-cols-4 gap-4">
         {/* Sidebar info */}
@@ -160,6 +166,19 @@ export function RunDetail() {
               <div>
                 <div className="text-[9px] text-zinc-600 uppercase tracking-wider">Error</div>
                 <div className="text-xs text-terminal-red">{run.error}</div>
+              </div>
+            )}
+            {run.domain_name && (
+              <div>
+                <div className="text-[9px] text-zinc-600 uppercase tracking-wider">Domain</div>
+                <a
+                  href={`https://${run.domain_name}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-terminal-cyan hover:underline break-all"
+                >
+                  {run.domain_name}
+                </a>
               </div>
             )}
             {run.deploy_url && (

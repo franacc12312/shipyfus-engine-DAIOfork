@@ -1,10 +1,10 @@
 import type { Department, RunStatus, StageStatus } from './types.js';
 
-export const STAGES: readonly Department[] = ['ideation', 'planning', 'development', 'deployment'] as const;
+export const STAGES: readonly Department[] = ['ideation', 'branding', 'planning', 'development', 'deployment'] as const;
 
 export const RUN_STATUSES: readonly RunStatus[] = ['queued', 'running', 'completed', 'failed', 'cancelled'] as const;
 
-export const STAGE_STATUSES: readonly StageStatus[] = ['pending', 'running', 'completed', 'failed', 'skipped'] as const;
+export const STAGE_STATUSES: readonly StageStatus[] = ['pending', 'running', 'completed', 'failed', 'skipped', 'awaiting_approval'] as const;
 
 export const EVENT_TYPES = {
   SYSTEM: 'system',
@@ -22,6 +22,8 @@ export const DEFAULT_MAX_BUDGET_USD = 10;
 
 export const AGENT_SLUGS = {
   IDEATOR: 'ideator',
+  BRANDER: 'brander',
+  CFO: 'cfo',
   PLANNER: 'planner',
   DEVELOPER: 'developer',
   DEPLOYER: 'deployer',
@@ -29,6 +31,7 @@ export const AGENT_SLUGS = {
 
 export const STAGE_AGENT_MAP: Record<Department, string> = {
   ideation: 'ideator',
+  branding: 'brander',
   planning: 'planner',
   development: 'developer',
   deployment: 'deployer',

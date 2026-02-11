@@ -25,6 +25,10 @@ const DEPARTMENT_FIELDS: Record<string, { label: string; key: string; type: stri
     { label: 'Max Iterations', key: 'max_iterations', type: 'number' },
     { label: 'Max Budget ($)', key: 'max_budget_usd', type: 'number' },
   ],
+  branding: [
+    { label: 'Max Domain Price ($)', key: 'max_domain_price', type: 'number' },
+    { label: 'Preferred TLDs', key: 'preferred_tlds', type: 'text' },
+  ],
   deployment: [
     { label: 'Provider', key: 'provider', type: 'select', options: ['vercel'] },
     { label: 'Auto Deploy', key: 'auto_deploy', type: 'toggle' },
