@@ -3,7 +3,8 @@ import { buildIdeatorPrompt } from '../agents/prompts/ideator.js';
 import { buildPlannerPrompt } from '../agents/prompts/planner.js';
 import { buildDeveloperPrompt } from '../agents/prompts/developer.js';
 import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
-import type { IdeationConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD } from '@daio/shared';
+import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js';
+import type { IdeationConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD } from '@daio/shared';
 
 const mockPRD: ProductPRD = {
   productName: 'TestApp',
@@ -107,5 +108,76 @@ describe('buildDeployerPrompt', () => {
   it('returns non-empty string', () => {
     const config: DeploymentConfig = { provider: 'vercel', auto_deploy: true };
     expect(buildDeployerPrompt(config, 'tok').length).toBeGreaterThan(0);
+  });
+
+  it('includes custom domain section when domain provided', () => {
+    const config: DeploymentConfig = { provider: 'vercel', auto_deploy: true };
+    const prompt = buildDeployerPrompt(config, 'tok', 'cool.xyz');
+    expect(prompt).toContain('cool.xyz');
+    expect(prompt).toContain('vercel domains add');
+    expect(prompt).toContain('customDomain');
+  });
+
+  it('omits custom domain section when no domain', () => {
+    const config: DeploymentConfig = { provider: 'vercel', auto_deploy: true };
+    const prompt = buildDeployerPrompt(config, 'tok');
+    expect(prompt).not.toContain('Custom Domain');
+    expect(prompt).not.toContain('customDomain');
+  });
+});
+
+describe('buildBranderPrompt', () => {
+  it('includes PRD details and branding config', () => {
+    const config: BrandingConfig = { max_domain_price: 10, preferred_tlds: ['xyz', 'com'] };
+    const prompt = buildBranderPrompt(mockPRD, config);
+    expect(prompt).toContain('A test application');
+    expect(prompt).toContain('developers');
+    expect(prompt).toContain('xyz, com');
+    expect(prompt).toContain('$10');
+  });
+
+  it('mentions .xyz priority', () => {
+    const config: BrandingConfig = {};
+    const prompt = buildBranderPrompt(mockPRD, config);
+    expect(prompt).toContain('xyz');
+    expect(prompt).toContain('$2');
+  });
+
+  it('uses workingTitle when available', () => {
+    const prdWithTitle = { ...mockPRD, workingTitle: 'WorkInProgress' };
+    const config: BrandingConfig = {};
+    const prompt = buildBranderPrompt(prdWithTitle, config);
+    expect(prompt).toContain('WorkInProgress');
+  });
+
+  it('includes naming strategy instructions', () => {
+    const config: BrandingConfig = {};
+    const prompt = buildBranderPrompt(mockPRD, config);
+    expect(prompt).toContain('invented');
+    expect(prompt).toContain('compound');
+    expect(prompt).toContain('domain-hack');
+  });
+});
+
+describe('buildCFOPrompt', () => {
+  it('includes domain and price', () => {
+    const prompt = buildCFOPrompt('cool.xyz', 2.04, 'CoolApp');
+    expect(prompt).toContain('cool.xyz');
+    expect(prompt).toContain('2.04');
+    expect(prompt).toContain('CoolApp');
+    expect(prompt).toContain('Porkbun');
+  });
+
+  it('returns non-empty string', () => {
+    expect(buildCFOPrompt('test.xyz', 2, 'Test').length).toBeGreaterThan(0);
+  });
+});
+
+describe('buildIdeatorPrompt (updated)', () => {
+  it('references workingTitle in output format', () => {
+    const config: IdeationConfig = { platform: 'web', audience: 'consumer', complexity: 'simple' };
+    const prompt = buildIdeatorPrompt(config);
+    expect(prompt).toContain('workingTitle');
+    expect(prompt).toContain('brand specialist');
   });
 });

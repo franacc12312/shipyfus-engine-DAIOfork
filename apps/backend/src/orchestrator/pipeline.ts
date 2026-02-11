@@ -8,7 +8,10 @@ import { buildIdeatorPrompt } from '../agents/prompts/ideator.js';
 import { buildPlannerPrompt } from '../agents/prompts/planner.js';
 import { buildDeveloperPrompt } from '../agents/prompts/developer.js';
 import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
-import type { IdeationConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD } from '@daio/shared';
+import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js';
+import { rankCandidates, purchaseDomain, configureDNSForVercel } from '@daio/brand';
+import type { BrandCandidate, PorkbunConfig } from '@daio/brand';
+import type { IdeationConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD } from '@daio/shared';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
 
@@ -139,7 +142,24 @@ export class PipelineOrchestrator {
       prd = await this.runIdeation(constraints.ideation, productDir);
     }
 
-    // Stage 2: Planning
+    // Stage 2: Branding (Prism picks name + CFO buys domain atomically)
+    let domainName: string | null = null;
+    const brandingStage = getStatus('branding');
+    if (brandingStage?.status === 'completed' && brandingStage.output_context) {
+      console.log(`Run ${this.runId}: skipping completed branding`);
+      const ctx = brandingStage.output_context as { productName?: string; domain?: string };
+      if (ctx.productName) prd.productName = ctx.productName;
+      domainName = ctx.domain ?? null;
+    } else if (brandingStage?.status === 'failed') {
+      throw new Error('Branding previously failed');
+    } else {
+      if (this.cancelled) return;
+      const brandResult = await this.runBranding(prd, constraints.branding, productDir);
+      prd = brandResult.prd;
+      domainName = brandResult.domainName;
+    }
+
+    // Stage 3: Planning
     const planningStage = getStatus('planning');
     if (planningStage?.status === 'completed') {
       console.log(`Run ${this.runId}: skipping completed planning`);
@@ -150,7 +170,7 @@ export class PipelineOrchestrator {
       await this.runPlanning(prd, constraints.planning, productDir);
     }
 
-    // Stage 3: Development
+    // Stage 4: Development
     const devStage = getStatus('development');
     if (devStage?.status === 'completed') {
       console.log(`Run ${this.runId}: skipping completed development`);
@@ -161,7 +181,7 @@ export class PipelineOrchestrator {
       await this.runDevelopment(constraints.development, productDir);
     }
 
-    // Stage 4: Deployment
+    // Stage 5: Deployment
     const deployStage = getStatus('deployment');
     if (deployStage?.status === 'completed') {
       console.log(`Run ${this.runId}: skipping completed deployment`);
@@ -169,8 +189,8 @@ export class PipelineOrchestrator {
       throw new Error('Deployment previously failed');
     } else {
       if (this.cancelled) return;
-      const deployResult = await this.runDeployment(constraints.deployment, productDir);
-      await this.registerProduct(prd, deployResult, productDir);
+      const deployResult = await this.runDeployment(constraints.deployment, productDir, domainName);
+      await this.registerProduct(prd, { ...deployResult, domainName }, productDir);
     }
 
     // Mark run completed
@@ -218,6 +238,120 @@ export class PipelineOrchestrator {
       await this.updateStageStatus('ideation', 'failed');
       throw err;
     }
+  }
+
+  private async runBranding(prd: ProductPRD, config: BrandingConfig, productDir: string): Promise<{ prd: ProductPRD; domainName: string }> {
+    await this.updateStageStatus('branding', 'running');
+
+    try {
+      // Step 1: Run Prism agent to generate brand name candidates
+      const branderPrompt = buildBranderPrompt(prd, config);
+      const branderResult = await this.runner.runOnce(branderPrompt, {
+        runId: this.runId,
+        stage: 'branding',
+        cwd: productDir,
+        maxBudgetUsd: 3,
+        agentId: this.agentMap.get('branding'),
+      });
+
+      // Parse candidates from Prism's response
+      const candidates = branderResult.json as BrandCandidate[] | null;
+      if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
+        throw new Error('Prism failed to generate brand candidates');
+      }
+
+      // Step 2: Check domain availability and rank candidates
+      const maxPrice = config.max_domain_price ?? 15;
+      const productInfo = {
+        productDescription: prd.productDescription,
+        technicalRequirements: prd.technicalRequirements,
+        targetUser: prd.targetUser,
+        coreFunctionality: prd.coreFunctionality,
+      };
+      const recommendations = await rankCandidates(candidates, productInfo, maxPrice);
+
+      if (recommendations.length === 0) {
+        throw new Error('No available domains found within budget');
+      }
+
+      const winner = recommendations[0];
+
+      // Step 3: Purchase the domain via Porkbun (CFO action)
+      let purchaseResult = null;
+      let dnsResult = null;
+
+      if (env.PORKBUN_API_KEY && env.PORKBUN_API_SECRET) {
+        const porkbunConfig: PorkbunConfig = {
+          apiKey: env.PORKBUN_API_KEY,
+          apiSecret: env.PORKBUN_API_SECRET,
+        };
+
+        purchaseResult = await purchaseDomain(winner.domain, porkbunConfig);
+
+        if (purchaseResult.status === 'purchased') {
+          dnsResult = await configureDNSForVercel(winner.domain, porkbunConfig);
+        }
+      } else {
+        console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
+      }
+
+      // Step 4: Run CFO agent for narration/logging
+      const cfoPrompt = buildCFOPrompt(winner.domain, winner.price, winner.name);
+      // Find CFO agent — look for 'cfo' slug in the agents loaded
+      const cfoAgentId = await this.resolveCFOAgent();
+
+      await this.runner.runOnce(cfoPrompt, {
+        runId: this.runId,
+        stage: 'branding',
+        cwd: productDir,
+        maxBudgetUsd: 1,
+        agentId: cfoAgentId,
+      });
+
+      // Step 5: Update PRD with the final product name
+      prd.productName = winner.name;
+
+      // Store branding output
+      const outputContext = {
+        productName: winner.name,
+        domain: winner.domain,
+        tld: winner.tld,
+        price: winner.price,
+        strategy: winner.strategy,
+        reasoning: winner.reasoning,
+        purchased: purchaseResult?.status === 'purchased',
+        dnsConfigured: dnsResult?.allSuccess ?? false,
+        alternatives: winner.alternatives,
+      };
+
+      await db.from('run_stages').update({
+        status: 'completed',
+        output_context: outputContext,
+        cost_usd: branderResult.cost,
+        completed_at: new Date().toISOString(),
+      }).eq('run_id', this.runId).eq('stage', 'branding');
+
+      // Update run with domain name
+      await db.from('runs').update({
+        domain_name: winner.domain,
+      }).eq('id', this.runId);
+
+      return { prd, domainName: winner.domain };
+    } catch (err) {
+      await this.updateStageStatus('branding', 'failed');
+      throw err;
+    }
+  }
+
+  private async resolveCFOAgent(): Promise<string | undefined> {
+    const { data } = await db
+      .from('agents')
+      .select('id')
+      .eq('slug', 'cfo')
+      .eq('is_active', true)
+      .limit(1);
+
+    return data?.[0]?.id;
   }
 
   private async runPlanning(prd: ProductPRD, config: PlanningConfig, productDir: string): Promise<void> {
@@ -282,11 +416,11 @@ export class PipelineOrchestrator {
     }
   }
 
-  private async runDeployment(config: DeploymentConfig, productDir: string): Promise<{ deployUrl: string | null }> {
+  private async runDeployment(config: DeploymentConfig, productDir: string, domainName?: string | null): Promise<{ deployUrl: string | null }> {
     await this.updateStageStatus('deployment', 'running');
 
     try {
-      const prompt = buildDeployerPrompt(config, env.VERCEL_TOKEN);
+      const prompt = buildDeployerPrompt(config, env.VERCEL_TOKEN, domainName ?? undefined);
       const result = await this.runner.runOnce(prompt, {
         runId: this.runId,
         stage: 'deployment',
@@ -316,7 +450,7 @@ export class PipelineOrchestrator {
     }
   }
 
-  private async registerProduct(prd: ProductPRD, deployResult: { deployUrl: string | null }, productDir: string): Promise<void> {
+  private async registerProduct(prd: ProductPRD, deployResult: { deployUrl: string | null; domainName?: string | null }, productDir: string): Promise<void> {
     const { data } = await db.from('products').insert({
       run_id: this.runId,
       name: prd.productName,
@@ -325,6 +459,7 @@ export class PipelineOrchestrator {
       tech_stack: { suggested: prd.suggestedTechStack },
       directory_path: productDir,
       deploy_url: deployResult.deployUrl,
+      domain_name: deployResult.domainName ?? null,
       status: deployResult.deployUrl ? 'deployed' : 'built',
     }).select().single();
 
@@ -342,6 +477,7 @@ export class PipelineOrchestrator {
     const map = Object.fromEntries(data.map((c: { department: string; config: unknown }) => [c.department, c.config]));
     return {
       ideation: map.ideation as IdeationConfig,
+      branding: (map.branding ?? { max_domain_price: 15, preferred_tlds: ['xyz'] }) as BrandingConfig,
       planning: map.planning as PlanningConfig,
       development: map.development as DevelopmentConfig,
       deployment: map.deployment as DeploymentConfig,

@@ -21,7 +21,8 @@ Output your idea as a single JSON block inside a \`\`\`json code fence. Use this
 
 \`\`\`json
 {
-  "productName": "Name of the product",
+  "workingTitle": "Working name for the product (a brand specialist will finalize the name later)",
+  "productName": "Same as workingTitle for now",
   "productDescription": "2-3 sentence description of what it does",
   "targetUser": "Who would use this",
   "problemStatement": "What problem it solves",
@@ -33,6 +34,8 @@ Output your idea as a single JSON block inside a \`\`\`json code fence. Use this
   "uniqueValue": "What makes this different or interesting"
 }
 \`\`\`
+
+Don't spend time on the perfect name — a brand specialist will finalize it. Just provide a working title that captures the essence of the product.
 
 Be creative but practical. The idea should be interesting enough to demonstrate but simple enough to build in one session.`;
 }

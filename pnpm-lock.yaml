@@ -17,6 +17,9 @@ importers:
 
   apps/backend:
     dependencies:
+      '@daio/brand':
+        specifier: workspace:*
+        version: link:../../packages/brand
       '@daio/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -97,6 +100,19 @@ importers:
       vite:
         specifier: ^7.3.1
         version: 7.3.1(@types/node@22.19.10)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@22.19.10)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
+
+  packages/brand:
+    dependencies:
+      whoiser:
+        specifier: 2.0.0-beta.10
+        version: 2.0.0-beta.10
+    devDependencies:
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
       vitest:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@22.19.10)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
@@ -1209,6 +1225,10 @@ packages:
   pstree.remy@1.1.8:
     resolution: {integrity: sha512-77DZwxQmxKnu3aR542U+X8FypNzbfJ+C5XQDk3uWjWxn6151aIMGthWYRXTqT1E5oJvg+ljaa2OJi+VfvCOQ8w==}
 
+  punycode-esm@1.0.15:
+    resolution: {integrity: sha512-pR7pzaunGU4g3v3vMIXD9WnrGUiEBs2ezcVYr9piTC/HVem9F+MJ+JNdSeYD9pK7EumLMUMO9F3Gsa3RS+o7pA==}
+    engines: {node: '>=20'}
+
   qs@6.14.1:
     resolution: {integrity: sha512-4EK3+xJl8Ts67nLYNwqw/dsFVnCf+qR7RgXSK9jEEm9unao3njwMDdmsdvoKBKHzxd7tCYz5e5M+SnMjdtXGQQ==}
     engines: {node: '>=0.6'}
@@ -1524,6 +1544,9 @@ packages:
         optional: true
       jsdom:
         optional: true
+
+  whoiser@2.0.0-beta.10:
+    resolution: {integrity: sha512-Y1uyLNR6zQnKj/mZPYtofs6u/9ZAnBzAuiTgU1aEMKjlnknrQdLyOKv9ErmIeF2mySMjGFj0tCam+DpxotBXHw==}
 
   why-is-node-running@2.3.0:
     resolution: {integrity: sha512-hUrmaWBdVDcxvYqnyh09zunKzROWjbZTiNy8dBEjkS7ehEDQibXJ7XvlmtbwuTclUiIyN+CyXQD4Vmko8fNm8w==}
@@ -2558,6 +2581,8 @@ snapshots:
 
   pstree.remy@1.1.8: {}
 
+  punycode-esm@1.0.15: {}
+
   qs@6.14.1:
     dependencies:
       side-channel: 1.1.0
@@ -2889,6 +2914,10 @@ snapshots:
       - terser
       - tsx
       - yaml
+
+  whoiser@2.0.0-beta.10:
+    dependencies:
+      punycode-esm: 1.0.15
 
   why-is-node-running@2.3.0:
     dependencies:

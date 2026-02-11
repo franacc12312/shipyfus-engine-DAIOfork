@@ -162,6 +162,19 @@ export function RunDetail() {
                 <div className="text-xs text-terminal-red">{run.error}</div>
               </div>
             )}
+            {run.domain_name && (
+              <div>
+                <div className="text-[9px] text-zinc-600 uppercase tracking-wider">Domain</div>
+                <a
+                  href={`https://${run.domain_name}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-terminal-cyan hover:underline break-all"
+                >
+                  {run.domain_name}
+                </a>
+              </div>
+            )}
             {run.deploy_url && (
               <div>
                 <div className="text-[9px] text-zinc-600 uppercase tracking-wider">Deploy URL</div>

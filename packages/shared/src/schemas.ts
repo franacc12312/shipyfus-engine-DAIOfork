@@ -23,6 +23,12 @@ export const developmentConfigSchema = z.object({
   custom_rules: z.array(z.string()).optional(),
 });
 
+export const brandingConfigSchema = z.object({
+  max_domain_price: z.number().min(1).max(200).optional(),
+  preferred_tlds: z.array(z.string()).optional(),
+  custom_rules: z.array(z.string()).optional(),
+});
+
 export const deploymentConfigSchema = z.object({
   provider: z.enum(['vercel']).optional(),
   auto_deploy: z.boolean().optional(),
@@ -31,12 +37,13 @@ export const deploymentConfigSchema = z.object({
 
 export const constraintConfigSchemas = {
   ideation: ideationConfigSchema,
+  branding: brandingConfigSchema,
   planning: planningConfigSchema,
   development: developmentConfigSchema,
   deployment: deploymentConfigSchema,
 } as const;
 
-export const departmentSchema = z.enum(['ideation', 'planning', 'development', 'deployment']);
+export const departmentSchema = z.enum(['ideation', 'branding', 'planning', 'development', 'deployment']);
 
 export const updateConstraintSchema = z.object({
   config: z.record(z.unknown()),

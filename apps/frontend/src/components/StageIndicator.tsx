@@ -3,6 +3,7 @@ import type { RunStage } from '@daio/shared';
 
 const STAGE_LABELS: Record<string, string> = {
   ideation: 'Ideation',
+  branding: 'Branding',
   planning: 'Planning',
   development: 'Development',
   deployment: 'Deployment',

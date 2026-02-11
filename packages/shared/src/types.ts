@@ -22,6 +22,7 @@ export interface Run {
   idea_summary: string | null;
   product_id: string | null;
   deploy_url: string | null;
+  domain_name: string | null;
   error: string | null;
   started_at: string | null;
   completed_at: string | null;
@@ -88,13 +89,14 @@ export interface Product {
   tech_stack: Record<string, unknown> | null;
   directory_path: string;
   deploy_url: string | null;
+  domain_name: string | null;
   status: ProductStatus;
   created_at: string;
 }
 
 // Enums and unions
 
-export type Department = 'ideation' | 'planning' | 'development' | 'deployment';
+export type Department = 'ideation' | 'branding' | 'planning' | 'development' | 'deployment';
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
 export type ProductStatus = 'built' | 'tested' | 'deployed' | 'archived';
@@ -124,17 +126,24 @@ export interface DevelopmentConfig {
   custom_rules?: string[];
 }
 
+export interface BrandingConfig {
+  max_domain_price?: number;
+  preferred_tlds?: string[];
+  custom_rules?: string[];
+}
+
 export interface DeploymentConfig {
   provider?: 'vercel';
   auto_deploy?: boolean;
   custom_rules?: string[];
 }
 
-export type ConstraintConfig = IdeationConfig | PlanningConfig | DevelopmentConfig | DeploymentConfig;
+export type ConstraintConfig = IdeationConfig | BrandingConfig | PlanningConfig | DevelopmentConfig | DeploymentConfig;
 
 // PRD output from ideation
 export interface ProductPRD {
   productName: string;
+  workingTitle?: string;
   productDescription: string;
   targetUser: string;
   problemStatement: string;

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ideationConfigSchema,
+  brandingConfigSchema,
   planningConfigSchema,
   developmentConfigSchema,
   deploymentConfigSchema,
@@ -76,6 +77,33 @@ describe('developmentConfigSchema', () => {
   });
 });
 
+describe('brandingConfigSchema', () => {
+  it('validates a correct branding config', () => {
+    const config = {
+      max_domain_price: 15,
+      preferred_tlds: ['xyz', 'io'],
+      custom_rules: ['Short names only'],
+    };
+    expect(brandingConfigSchema.parse(config)).toEqual(config);
+  });
+
+  it('accepts empty config (all optional)', () => {
+    expect(brandingConfigSchema.parse({})).toEqual({});
+  });
+
+  it('rejects max_domain_price below 1', () => {
+    expect(() =>
+      brandingConfigSchema.parse({ max_domain_price: 0 })
+    ).toThrow();
+  });
+
+  it('rejects max_domain_price above 200', () => {
+    expect(() =>
+      brandingConfigSchema.parse({ max_domain_price: 300 })
+    ).toThrow();
+  });
+});
+
 describe('deploymentConfigSchema', () => {
   it('validates a correct deployment config', () => {
     const config = {
@@ -94,8 +122,8 @@ describe('deploymentConfigSchema', () => {
 });
 
 describe('departmentSchema', () => {
-  it('validates all department names', () => {
-    for (const dept of ['ideation', 'planning', 'development', 'deployment']) {
+  it('validates all department names including branding', () => {
+    for (const dept of ['ideation', 'branding', 'planning', 'development', 'deployment']) {
       expect(departmentSchema.parse(dept)).toBe(dept);
     }
   });
@@ -106,9 +134,9 @@ describe('departmentSchema', () => {
 });
 
 describe('constants', () => {
-  it('STAGES has exactly 4 entries in correct order', () => {
-    expect(STAGES).toEqual(['ideation', 'planning', 'development', 'deployment']);
-    expect(STAGES).toHaveLength(4);
+  it('STAGES has exactly 5 entries in correct order', () => {
+    expect(STAGES).toEqual(['ideation', 'branding', 'planning', 'development', 'deployment']);
+    expect(STAGES).toHaveLength(5);
   });
 
   it('RUN_STATUSES has all expected values', () => {
@@ -127,8 +155,10 @@ describe('constants', () => {
     expect(STAGE_STATUSES).toContain('skipped');
   });
 
-  it('AGENT_SLUGS has all 4 agent slugs', () => {
+  it('AGENT_SLUGS has all 6 agent slugs', () => {
     expect(AGENT_SLUGS.IDEATOR).toBe('ideator');
+    expect(AGENT_SLUGS.BRANDER).toBe('brander');
+    expect(AGENT_SLUGS.CFO).toBe('cfo');
     expect(AGENT_SLUGS.PLANNER).toBe('planner');
     expect(AGENT_SLUGS.DEVELOPER).toBe('developer');
     expect(AGENT_SLUGS.DEPLOYER).toBe('deployer');
@@ -136,6 +166,7 @@ describe('constants', () => {
 
   it('STAGE_AGENT_MAP maps all stages to agent slugs', () => {
     expect(STAGE_AGENT_MAP.ideation).toBe('ideator');
+    expect(STAGE_AGENT_MAP.branding).toBe('brander');
     expect(STAGE_AGENT_MAP.planning).toBe('planner');
     expect(STAGE_AGENT_MAP.development).toBe('developer');
     expect(STAGE_AGENT_MAP.deployment).toBe('deployer');
