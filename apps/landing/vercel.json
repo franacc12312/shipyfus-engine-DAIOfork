@@ -1,0 +1,6 @@
+{
+  "framework": "vite",
+  "buildCommand": "pnpm --filter @daio/landing build",
+  "outputDirectory": "apps/landing/dist",
+  "installCommand": "pnpm install"
+}
