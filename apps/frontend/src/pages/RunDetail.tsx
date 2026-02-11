@@ -2,8 +2,11 @@ import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useRealtimeRun } from '../hooks/useRealtimeRun';
 import { useRealtimeLogs } from '../hooks/useRealtimeLogs';
+import { useAgents } from '../hooks/useAgents';
 import { StageIndicator } from '../components/StageIndicator';
 import { LogStream } from '../components/LogStream';
+import { ChatStream } from '../components/ChatStream';
+import { ViewToggle } from '../components/ViewToggle';
 import { AdminGate } from '../components/AdminGate';
 import { api } from '../lib/api';
 import { STAGES } from '@daio/shared';
@@ -14,7 +17,9 @@ export function RunDetail() {
   const { id } = useParams();
   const { run, loading: runLoading } = useRealtimeRun(id);
   const { logs, loading: logsLoading } = useRealtimeLogs(id);
+  const { agentsByStage, agentsById } = useAgents();
   const [activeTab, setActiveTab] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<'chat' | 'terminal'>('chat');
   const [cancelling, setCancelling] = useState(false);
   const [retrying, setRetrying] = useState(false);
 
@@ -182,25 +187,36 @@ export function RunDetail() {
 
         {/* Logs */}
         <div className="col-span-3">
-          {/* Tab filter */}
-          <div className="flex gap-1 mb-2">
-            {STAGE_TABS.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-3 py-1 rounded text-[10px] uppercase tracking-wider transition ${
-                  activeTab === tab
-                    ? 'bg-zinc-800 text-terminal-green'
-                    : 'text-zinc-500 hover:text-zinc-300'
-                }`}
-              >
-                {tab}
-              </button>
-            ))}
+          {/* Tab filter + View toggle */}
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex gap-1">
+              {STAGE_TABS.map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`px-3 py-1 rounded text-[10px] uppercase tracking-wider transition ${
+                    activeTab === tab
+                      ? 'bg-zinc-800 text-terminal-green'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+            <ViewToggle mode={viewMode} onChange={setViewMode} />
           </div>
 
           {logsLoading ? (
             <div className="text-zinc-500 text-sm p-4">Loading logs...</div>
+          ) : viewMode === 'chat' ? (
+            <ChatStream
+              logs={logs}
+              agents={agentsByStage}
+              agentsById={agentsById}
+              isRunning={isRunning}
+              stageFilter={activeTab === 'all' ? null : activeTab}
+            />
           ) : (
             <LogStream
               logs={logs}

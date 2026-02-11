@@ -16,16 +16,34 @@ export class PipelineOrchestrator {
   private runner: AgentRunner;
   private runId: string;
   private cancelled = false;
+  private agentMap = new Map<string, string>();
 
   constructor(runId: string) {
     this.runId = runId;
     this.runner = new AgentRunner();
   }
 
+  private async resolveAgents(): Promise<void> {
+    const { data } = await db
+      .from('agents')
+      .select('id, stage')
+      .eq('is_active', true)
+      .order('display_order');
+
+    if (data) {
+      for (const agent of data) {
+        if (!this.agentMap.has(agent.stage)) {
+          this.agentMap.set(agent.stage, agent.id);
+        }
+      }
+    }
+  }
+
   async execute(): Promise<void> {
     try {
       // Update run status to running
       await this.updateRunStatus('running');
+      await this.resolveAgents();
 
       // Create all stage records
       for (const stage of STAGE_ORDER) {
@@ -54,6 +72,7 @@ export class PipelineOrchestrator {
     try {
       console.log(`Resuming pipeline for run ${this.runId} (retryFailed=${retryFailed})`);
       await this.updateRunStatus('running');
+      await this.resolveAgents();
       await db.from('runs').update({ error: null }).eq('id', this.runId);
 
       // Always reset interrupted "running" stages back to pending
@@ -174,6 +193,7 @@ export class PipelineOrchestrator {
         stage: 'ideation',
         cwd: productDir,
         maxBudgetUsd: 3,
+        agentId: this.agentMap.get('ideation'),
       });
 
       const prd = result.json as ProductPRD;
@@ -210,6 +230,7 @@ export class PipelineOrchestrator {
         stage: 'planning',
         cwd: productDir,
         maxBudgetUsd: 5,
+        agentId: this.agentMap.get('planning'),
       });
 
       await db.from('run_stages').update({
@@ -235,6 +256,7 @@ export class PipelineOrchestrator {
         cwd: productDir,
         maxBudgetUsd: config.max_budget_usd ?? 10,
         maxIterations: config.max_iterations ?? 20,
+        agentId: this.agentMap.get('development'),
       });
 
       await db.from('run_stages').update({
@@ -270,6 +292,7 @@ export class PipelineOrchestrator {
         stage: 'deployment',
         cwd: productDir,
         maxBudgetUsd: 5,
+        agentId: this.agentMap.get('deployment'),
       });
 
       const deployResult = result.json as { deployUrl: string | null; status: string } | null;

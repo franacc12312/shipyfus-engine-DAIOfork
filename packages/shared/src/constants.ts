@@ -19,3 +19,17 @@ export const COMPLETION_PROMISE = 'PRODUCT COMPLETE';
 
 export const DEFAULT_MAX_ITERATIONS = 20;
 export const DEFAULT_MAX_BUDGET_USD = 10;
+
+export const AGENT_SLUGS = {
+  IDEATOR: 'ideator',
+  PLANNER: 'planner',
+  DEVELOPER: 'developer',
+  DEPLOYER: 'deployer',
+} as const;
+
+export const STAGE_AGENT_MAP: Record<Department, string> = {
+  ideation: 'ideator',
+  planning: 'planner',
+  development: 'developer',
+  deployment: 'deployer',
+} as const;

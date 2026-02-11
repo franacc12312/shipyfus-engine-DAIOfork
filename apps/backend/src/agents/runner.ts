@@ -10,6 +10,7 @@ export interface RunOnceOptions {
   cwd: string;
   maxBudgetUsd?: number;
   iteration?: number;
+  agentId?: string;
   onEvent?: (event: ClaudeStreamEvent) => void;
 }
 
@@ -25,6 +26,7 @@ interface LogEntry {
   event_type: string;
   content: string;
   raw_event: Record<string, unknown>;
+  agent_id: string | null;
 }
 
 const LOG_BATCH_SIZE = 20;
@@ -41,7 +43,7 @@ export class AgentRunner {
   }
 
   async runOnce(prompt: string, options: RunOnceOptions): Promise<{ text: string; json: unknown | null; cost: number }> {
-    const { runId, stage, cwd, maxBudgetUsd = 5, iteration = 0, onEvent } = options;
+    const { runId, stage, cwd, maxBudgetUsd = 5, iteration = 0, agentId, onEvent } = options;
 
     const args = [
       '--print',
@@ -88,6 +90,7 @@ export class AgentRunner {
           event_type: eventType,
           content: content.slice(0, 10000),
           raw_event: event as unknown as Record<string, unknown>,
+          agent_id: agentId || null,
         });
       });
 

@@ -64,3 +64,13 @@ body {
 .blink {
   animation: blink 1s step-end infinite;
 }
+
+/* Chat message slide-in */
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.chat-message-enter {
+  animation: slide-in 0.2s ease-out;
+}
