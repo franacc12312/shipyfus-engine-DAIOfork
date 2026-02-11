@@ -1,0 +1,266 @@
+@import "tailwindcss";
+
+@theme {
+  --color-neon-cyan: #00ffff;
+  --color-neon-pink: #ff0080;
+  --color-neon-purple: #bf00ff;
+  --color-neon-green: #00ff41;
+  --color-neon-gold: #ffcc00;
+  --color-neon-magenta: #ff00ff;
+  --color-neon-orange: #ff6600;
+  --color-neon-blue: #0066ff;
+  --color-bg-primary: #0a0a0f;
+  --color-bg-secondary: #12121a;
+  --color-bg-tertiary: #1a1a25;
+  --color-text-muted: #8a8a9a;
+  --font-display: 'Orbitron', sans-serif;
+  --font-mono: 'Share Tech Mono', 'JetBrains Mono', ui-monospace, monospace;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-bg-primary);
+  color: #c0c0cc;
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Display font for headings */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Neon glow effects — layered box-shadows */
+.glow-cyan {
+  text-shadow:
+    0 0 5px rgba(0, 255, 255, 0.6),
+    0 0 10px rgba(0, 255, 255, 0.4),
+    0 0 20px rgba(0, 255, 255, 0.2);
+}
+
+.glow-pink {
+  text-shadow:
+    0 0 5px rgba(255, 0, 128, 0.6),
+    0 0 10px rgba(255, 0, 128, 0.4),
+    0 0 20px rgba(255, 0, 128, 0.2);
+}
+
+.glow-green {
+  text-shadow:
+    0 0 5px rgba(0, 255, 65, 0.6),
+    0 0 10px rgba(0, 255, 65, 0.4),
+    0 0 20px rgba(0, 255, 65, 0.2);
+}
+
+/* Box glow for cards/elements */
+.box-glow-cyan {
+  box-shadow:
+    0 0 5px rgba(0, 255, 255, 0.15),
+    0 0 10px rgba(0, 255, 255, 0.1),
+    0 0 20px rgba(0, 255, 255, 0.05);
+}
+
+.box-glow-pink {
+  box-shadow:
+    0 0 5px rgba(255, 0, 128, 0.15),
+    0 0 10px rgba(255, 0, 128, 0.1),
+    0 0 20px rgba(255, 0, 128, 0.05);
+}
+
+/* Perspective grid background */
+.grid-bg {
+  position: relative;
+}
+
+.grid-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 60px 40px;
+  mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.4) 30%, rgba(0,0,0,0.4) 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.4) 30%, rgba(0,0,0,0.4) 70%, transparent 100%);
+  pointer-events: none;
+}
+
+/* Ambient glow overlays */
+.ambient-glow {
+  position: relative;
+}
+
+.ambient-glow::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  height: 60%;
+  background: radial-gradient(ellipse at center, rgba(0, 255, 255, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* Scanline overlay */
+.scanlines::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 255, 255, 0.01) 2px,
+    rgba(0, 255, 255, 0.01) 4px
+  );
+  pointer-events: none;
+  z-index: 100;
+  animation: scanline-scroll 8s linear infinite;
+}
+
+@keyframes scanline-scroll {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(4px); }
+}
+
+/* Cyberpunk card */
+.cyber-card {
+  position: relative;
+  background: linear-gradient(135deg, rgba(18, 18, 26, 0.8), rgba(10, 10, 15, 0.9));
+  border: 1px solid rgba(0, 255, 255, 0.1);
+  transition: all 0.3s ease;
+}
+
+.cyber-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.3), transparent);
+}
+
+.cyber-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(0, 255, 255, 0.25);
+  box-shadow:
+    0 0 10px rgba(0, 255, 255, 0.1),
+    0 0 20px rgba(0, 255, 255, 0.05);
+}
+
+/* Cyber button */
+.cyber-btn {
+  position: relative;
+  border: 2px solid rgba(0, 255, 255, 0.5);
+  background: transparent;
+  color: var(--color-neon-cyan);
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  transition: all 0.3s ease;
+}
+
+.cyber-btn:hover {
+  background: rgba(0, 255, 255, 0.1);
+  border-color: var(--color-neon-cyan);
+  box-shadow:
+    0 0 10px rgba(0, 255, 255, 0.2),
+    0 0 20px rgba(0, 255, 255, 0.1);
+}
+
+/* Pulsing dot */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px currentColor; }
+  50% { opacity: 0.3; box-shadow: 0 0 8px currentColor; }
+}
+
+.pulse-dot {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+/* Blinking cursor */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Glitch effect for headings */
+@keyframes glitch {
+  0%, 100% { clip-path: inset(0 0 0 0); transform: translate(0); }
+  20% { clip-path: inset(20% 0 60% 0); transform: translate(-2px, 2px); }
+  40% { clip-path: inset(60% 0 0 0); transform: translate(2px, -2px); }
+  60% { clip-path: inset(40% 0 40% 0); transform: translate(-1px, 1px); }
+  80% { clip-path: inset(0 0 80% 0); transform: translate(1px, -1px); }
+}
+
+.glitch-hover:hover {
+  animation: glitch 0.3s ease-in-out;
+}
+
+/* Scroll reveal animations */
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.reveal {
+  opacity: 0;
+}
+
+.reveal.visible {
+  animation: reveal-up 0.6s ease-out forwards;
+}
+
+/* Flicker animation for neon text */
+@keyframes flicker {
+  0%, 19.999%, 22%, 62.999%, 64%, 64.999%, 72%, 100% { opacity: 1; }
+  20%, 21.999%, 63%, 63.999%, 65%, 71.999% { opacity: 0.4; }
+}
+
+.neon-flicker {
+  animation: flicker 3s infinite;
+}
+
+/* Gradient divider line */
+.gradient-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.3), rgba(255, 0, 128, 0.3), transparent);
+}
