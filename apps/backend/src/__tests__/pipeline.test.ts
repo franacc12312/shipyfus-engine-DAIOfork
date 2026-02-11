@@ -6,6 +6,7 @@ const dbOps: { table: string; op: string; data?: any }[] = [];
 vi.mock('../services/db.js', () => {
   const chainable = {
     eq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue({ data: null, error: null }),
     select: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),

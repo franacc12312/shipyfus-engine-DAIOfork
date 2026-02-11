@@ -13,6 +13,7 @@ vi.mock('../services/db.js', () => {
     const state: { table: string; filters: Record<string, string> } = { table: '', filters: {} };
     const chain: any = {
       eq: vi.fn((col: string, val: string) => { state.filters[col] = val; return chain; }),
+      in: vi.fn(() => chain),
       single: vi.fn(() => {
         if (state.table === 'hitl_config') {
           return Promise.resolve({ data: { ...hitlConfig }, error: null });
@@ -187,9 +188,9 @@ describe('checkApprovalGate', () => {
     await expect(orch.checkApprovalGate('ideation')).rejects.toThrow('Retry requested');
   });
 
-  it('throws error when stage is rejected with cancel (status=failed)', async () => {
+  it('throws error when stage is rejected with cancel (status=cancelled)', async () => {
     hitlConfig.enabled = true;
-    stageStatusResponses.development = 'failed';
+    stageStatusResponses.development = 'cancelled';
 
     const orch = new PipelineOrchestrator('run-1');
     await expect(orch.checkApprovalGate('development')).rejects.toThrow('rejected');

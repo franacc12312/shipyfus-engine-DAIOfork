@@ -70,7 +70,7 @@ export const agentSchema = z.object({
 
 // HITL schemas
 
-export const stageStatusSchema = z.enum(['pending', 'running', 'completed', 'failed', 'skipped', 'awaiting_approval']);
+export const stageStatusSchema = z.enum(['pending', 'running', 'completed', 'failed', 'cancelled', 'skipped', 'awaiting_approval']);
 
 export const hitlConfigSchema = z.object({
   enabled: z.boolean(),
