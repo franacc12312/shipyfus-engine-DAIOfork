@@ -46,6 +46,26 @@ export interface RunStage {
   created_at: string;
 }
 
+export interface AgentCharacteristics {
+  tone?: string;
+  emoji?: string;
+  color?: string;
+  [key: string]: unknown;
+}
+
+export interface Agent {
+  id: string;
+  slug: string;
+  name: string;
+  stage: Department;
+  role_description: string;
+  avatar_url: string | null;
+  characteristics: AgentCharacteristics;
+  is_active: boolean;
+  display_order: number;
+  created_at: string;
+}
+
 export interface Log {
   id: number;
   run_id: string;
@@ -54,6 +74,7 @@ export interface Log {
   event_type: string;
   content: string | null;
   raw_event: Record<string, unknown> | null;
+  agent_id: string | null;
   timestamp: string;
 }
 

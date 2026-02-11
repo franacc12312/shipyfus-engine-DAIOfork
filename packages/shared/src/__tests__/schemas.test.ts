@@ -5,8 +5,10 @@ import {
   developmentConfigSchema,
   deploymentConfigSchema,
   departmentSchema,
+  agentSchema,
+  agentCharacteristicsSchema,
 } from '../schemas.js';
-import { STAGES, RUN_STATUSES, STAGE_STATUSES } from '../constants.js';
+import { STAGES, RUN_STATUSES, STAGE_STATUSES, AGENT_SLUGS, STAGE_AGENT_MAP } from '../constants.js';
 
 describe('ideationConfigSchema', () => {
   it('validates a correct ideation config', () => {
@@ -123,5 +125,73 @@ describe('constants', () => {
     expect(STAGE_STATUSES).toContain('completed');
     expect(STAGE_STATUSES).toContain('failed');
     expect(STAGE_STATUSES).toContain('skipped');
+  });
+
+  it('AGENT_SLUGS has all 4 agent slugs', () => {
+    expect(AGENT_SLUGS.IDEATOR).toBe('ideator');
+    expect(AGENT_SLUGS.PLANNER).toBe('planner');
+    expect(AGENT_SLUGS.DEVELOPER).toBe('developer');
+    expect(AGENT_SLUGS.DEPLOYER).toBe('deployer');
+  });
+
+  it('STAGE_AGENT_MAP maps all stages to agent slugs', () => {
+    expect(STAGE_AGENT_MAP.ideation).toBe('ideator');
+    expect(STAGE_AGENT_MAP.planning).toBe('planner');
+    expect(STAGE_AGENT_MAP.development).toBe('developer');
+    expect(STAGE_AGENT_MAP.deployment).toBe('deployer');
+  });
+});
+
+describe('agentCharacteristicsSchema', () => {
+  it('validates characteristics with all fields', () => {
+    const chars = { tone: 'creative', emoji: '💡', color: '#4ade80' };
+    expect(agentCharacteristicsSchema.parse(chars)).toEqual(chars);
+  });
+
+  it('accepts empty characteristics', () => {
+    expect(agentCharacteristicsSchema.parse({})).toEqual({});
+  });
+
+  it('passes through unknown fields', () => {
+    const chars = { tone: 'creative', customField: 'value' };
+    expect(agentCharacteristicsSchema.parse(chars)).toEqual(chars);
+  });
+});
+
+describe('agentSchema', () => {
+  const validAgent = {
+    id: '550e8400-e29b-41d4-a716-446655440000',
+    slug: 'ideator',
+    name: 'Nova',
+    stage: 'ideation' as const,
+    role_description: 'Product Ideation Specialist',
+    avatar_url: null,
+    characteristics: { tone: 'creative', emoji: '💡', color: '#4ade80' },
+    is_active: true,
+    display_order: 0,
+    created_at: '2026-02-11T00:00:00.000Z',
+  };
+
+  it('validates a correct agent', () => {
+    expect(agentSchema.parse(validAgent)).toEqual(validAgent);
+  });
+
+  it('validates agent with avatar_url', () => {
+    const agent = { ...validAgent, avatar_url: 'https://example.com/avatar.png' };
+    expect(agentSchema.parse(agent)).toEqual(agent);
+  });
+
+  it('rejects agent with missing required fields', () => {
+    expect(() => agentSchema.parse({ id: validAgent.id })).toThrow();
+    expect(() => agentSchema.parse({ ...validAgent, slug: '' })).toThrow();
+    expect(() => agentSchema.parse({ ...validAgent, name: '' })).toThrow();
+  });
+
+  it('rejects agent with invalid stage', () => {
+    expect(() => agentSchema.parse({ ...validAgent, stage: 'marketing' })).toThrow();
+  });
+
+  it('rejects agent with invalid uuid', () => {
+    expect(() => agentSchema.parse({ ...validAgent, id: 'not-a-uuid' })).toThrow();
   });
 });

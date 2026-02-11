@@ -8,6 +8,7 @@ import healthRouter from './routes/health.js';
 import constraintsRouter from './routes/constraints.js';
 import runsRouter from './routes/runs.js';
 import productsRouter from './routes/products.js';
+import agentsRouter from './routes/agents.js';
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.use('/api/health', healthRouter);
 app.use('/api/constraints', constraintsRouter);
 app.use('/api/runs', runsRouter);
 app.use('/api/products', productsRouter);
+app.use('/api/agents', agentsRouter);
 
 app.use(errorHandler);
 

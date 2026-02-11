@@ -41,3 +41,22 @@ export const departmentSchema = z.enum(['ideation', 'planning', 'development', '
 export const updateConstraintSchema = z.object({
   config: z.record(z.unknown()),
 });
+
+export const agentCharacteristicsSchema = z.object({
+  tone: z.string().optional(),
+  emoji: z.string().optional(),
+  color: z.string().optional(),
+}).passthrough();
+
+export const agentSchema = z.object({
+  id: z.string().uuid(),
+  slug: z.string().min(1),
+  name: z.string().min(1),
+  stage: departmentSchema,
+  role_description: z.string(),
+  avatar_url: z.string().url().nullable(),
+  characteristics: agentCharacteristicsSchema,
+  is_active: z.boolean(),
+  display_order: z.number().int(),
+  created_at: z.string(),
+});
