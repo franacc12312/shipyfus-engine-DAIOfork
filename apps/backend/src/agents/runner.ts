@@ -83,15 +83,17 @@ export class AgentRunner {
           }
         }
 
-        this.bufferLog({
-          run_id: runId,
-          stage,
-          iteration,
-          event_type: eventType,
-          content: content.slice(0, 10000),
-          raw_event: event as unknown as Record<string, unknown>,
-          agent_id: agentId || null,
-        });
+        if (content.trim()) {
+          this.bufferLog({
+            run_id: runId,
+            stage,
+            iteration,
+            event_type: eventType,
+            content: content.slice(0, 10000),
+            raw_event: event as unknown as Record<string, unknown>,
+            agent_id: agentId || null,
+          });
+        }
       });
 
       let stderrOutput = '';
