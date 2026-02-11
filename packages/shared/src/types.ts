@@ -107,6 +107,7 @@ export interface HitlConfig {
   id: string;
   enabled: boolean;
   gate_after_ideation: boolean;
+  gate_after_branding: boolean;
   gate_after_planning: boolean;
   gate_after_development: boolean;
   updated_at: string;

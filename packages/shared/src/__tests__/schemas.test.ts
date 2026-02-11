@@ -179,6 +179,7 @@ describe('hitlConfigSchema', () => {
     const config = {
       enabled: true,
       gate_after_ideation: true,
+      gate_after_branding: true,
       gate_after_planning: false,
       gate_after_development: true,
     };
@@ -194,6 +195,7 @@ describe('hitlConfigSchema', () => {
       hitlConfigSchema.parse({
         enabled: 'yes',
         gate_after_ideation: true,
+        gate_after_branding: true,
         gate_after_planning: true,
         gate_after_development: true,
       })
