@@ -62,6 +62,17 @@ See `.env.example` for all required variables. Key ones: SUPABASE_URL, SUPABASE_
 
 **ALWAYS work in a git worktree** (`.worktrees/` directory), never directly on `main`. Each task/issue should have its own worktree. If context has been lost and you're unsure which worktree to use, try to infer it from the current task or Linear issue — if you can't, ask the user. Do not make changes on `main` unless the user explicitly tells you to.
 
+## Port Management
+
+Each worktree gets its own backend + frontend ports to avoid clashes when running multiple worktrees simultaneously.
+
+- **Port registry**: `.worktrees/ports.json` — maps worktree names to `{ backend, frontend }` port pairs
+- **Main is always reserved**: backend 3001, frontend 5173 — never deallocated
+- **Allocation**: `/create_worktree` assigns the next available ports and updates the worktree's `.env`
+- **Deallocation**: `/cleanup_worktree` removes the entry from the registry
+- Ports are read from `.env` by both backend (`PORT`) and frontend (`FRONTEND_PORT` + proxy to `PORT`)
+- When running `pnpm dev` in a worktree, servers start on the ports specified in that worktree's `.env`
+
 ## Conventions
 - TypeScript everywhere, ESM modules
 - Zod for runtime validation
