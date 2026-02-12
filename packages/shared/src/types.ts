@@ -127,6 +127,16 @@ export interface HitlConfig {
 
 export type HitlGateAction = 'approve' | 'retry' | 'cancel';
 
+export interface DomainChoice {
+  domain: string;
+  name: string;
+  price: number;
+  tld: string;
+  strategy: string;
+  reasoning: string;
+  score: number;
+}
+
 // Constraint config types per department
 
 export interface IdeationConfig {
