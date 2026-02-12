@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { AuthProvider } from './hooks/useAuth';
 import { Dashboard } from './pages/Dashboard';
 import { RunDetail } from './pages/RunDetail';
 import { Constraints } from './pages/Constraints';
@@ -10,6 +11,7 @@ import { Team } from './pages/Team';
 
 export default function App() {
   return (
+    <AuthProvider>
     <BrowserRouter>
       <Routes>
         <Route element={<Layout />}>
@@ -22,5 +24,6 @@ export default function App() {
         </Route>
       </Routes>
     </BrowserRouter>
+    </AuthProvider>
   );
 }
