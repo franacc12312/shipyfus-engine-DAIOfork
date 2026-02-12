@@ -15,6 +15,7 @@ let mockHitlConfig: Record<string, unknown> = {
 vi.mock('../services/db.js', () => {
   const chainable = {
     eq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue({ data: { status: 'completed' }, error: null }),
     select: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),

@@ -5,4 +5,5 @@ dist/
 supabase/.temp
 thoughts/
 products/*/
+.worktrees/
 .DS_Store

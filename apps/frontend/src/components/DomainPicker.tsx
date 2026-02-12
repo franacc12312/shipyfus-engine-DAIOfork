@@ -62,7 +62,7 @@ export function DomainPicker({ runId, stage }: DomainPickerProps) {
           The branding agent could not find any available domains. Try re-running the stage or cancel.
         </p>
         <div className="flex gap-2">
-          <AdminGate fallback={null}>
+          <AdminGate>
             <button
               onClick={handleRetry}
               disabled={rejecting}
@@ -156,7 +156,7 @@ export function DomainPicker({ runId, stage }: DomainPickerProps) {
       </div>
 
       <div className="flex gap-2">
-        <AdminGate fallback={null}>
+        <AdminGate>
           <button
             onClick={handleConfirm}
             disabled={selected === null || purchasing || rejecting}

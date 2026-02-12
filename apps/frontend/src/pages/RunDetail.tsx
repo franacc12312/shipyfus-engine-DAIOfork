@@ -91,7 +91,7 @@ export function RunDetail() {
 
         <div className="flex gap-2">
           {run.status === 'failed' && (
-            <AdminGate fallback={null}>
+            <AdminGate>
               <button
                 onClick={handleRetry}
                 disabled={retrying}
@@ -102,13 +102,7 @@ export function RunDetail() {
             </AdminGate>
           )}
           {isRunning && (
-            <AdminGate
-              fallback={
-                <button className="text-terminal-red text-xs border border-terminal-red/30 rounded px-3 py-1 hover:bg-terminal-red/10">
-                  CANCEL
-                </button>
-              }
-            >
+            <AdminGate>
               <button
                 onClick={handleCancel}
                 disabled={cancelling}

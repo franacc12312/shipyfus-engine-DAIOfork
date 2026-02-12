@@ -154,19 +154,20 @@ describe('constants', () => {
     expect(RUN_STATUSES).toContain('cancelled');
   });
 
-  it('STAGE_STATUSES has all expected values including awaiting_approval', () => {
+  it('STAGE_STATUSES has all expected values including awaiting_approval and cancelled', () => {
     expect(STAGE_STATUSES).toContain('pending');
     expect(STAGE_STATUSES).toContain('running');
     expect(STAGE_STATUSES).toContain('completed');
     expect(STAGE_STATUSES).toContain('failed');
+    expect(STAGE_STATUSES).toContain('cancelled');
     expect(STAGE_STATUSES).toContain('skipped');
     expect(STAGE_STATUSES).toContain('awaiting_approval');
   });
 });
 
 describe('stageStatusSchema', () => {
-  it('validates all stage statuses including awaiting_approval', () => {
-    for (const status of ['pending', 'running', 'completed', 'failed', 'skipped', 'awaiting_approval']) {
+  it('validates all stage statuses including cancelled and awaiting_approval', () => {
+    for (const status of ['pending', 'running', 'completed', 'failed', 'cancelled', 'skipped', 'awaiting_approval']) {
       expect(stageStatusSchema.parse(status)).toBe(status);
     }
   });

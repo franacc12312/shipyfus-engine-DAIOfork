@@ -86,7 +86,7 @@ export function ApprovalGate({ runId, stage }: ApprovalGateProps) {
       )}
 
       <div className="flex gap-2 mt-3">
-        <AdminGate fallback={null}>
+        <AdminGate>
           <button
             onClick={handleApprove}
             disabled={approving || rejecting}

@@ -35,6 +35,21 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json();
 }
 
+export async function verifyPassword(password: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE_URL}/health/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${password}`,
+      },
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
