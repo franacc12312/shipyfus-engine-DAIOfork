@@ -68,6 +68,26 @@ export const agentSchema = z.object({
   created_at: z.string(),
 });
 
+// Participant schemas
+
+export const participantSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid().nullable(),
+  name: z.string().min(1),
+  role_title: z.string().min(1),
+  avatar_url: z.string().url().nullable(),
+  is_active: z.boolean(),
+  display_order: z.number().int(),
+  created_at: z.string(),
+});
+
+export const createParticipantSchema = z.object({
+  name: z.string().min(1),
+  role_title: z.string().min(1),
+  user_id: z.string().uuid().optional(),
+  avatar_url: z.string().url().optional(),
+});
+
 // HITL schemas
 
 export const stageStatusSchema = z.enum(['pending', 'running', 'completed', 'failed', 'cancelled', 'skipped', 'awaiting_approval']);
@@ -89,6 +109,20 @@ export const updateHitlConfigSchema = z.object({
 });
 
 export const hitlGateActionSchema = z.enum(['approve', 'retry', 'cancel']);
+
+export const domainChoiceSchema = z.object({
+  domain: z.string().min(1),
+  name: z.string().min(1),
+  price: z.number().min(0),
+  tld: z.string().min(1),
+  strategy: z.string().min(1),
+  reasoning: z.string(),
+  score: z.number().min(0),
+});
+
+export const approveStageSchema = z.object({
+  chosen_domain: domainChoiceSchema.optional(),
+});
 
 export const rejectStageSchema = z.object({
   action: z.enum(['retry', 'cancel']),

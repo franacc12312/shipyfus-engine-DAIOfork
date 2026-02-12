@@ -11,7 +11,7 @@ import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
 import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js';
 import { rankCandidates, purchaseDomain, configureDNSForVercel } from '@daio/brand';
 import type { BrandCandidate, PorkbunConfig } from '@daio/brand';
-import type { IdeationConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD, Department, HitlConfig } from '@daio/shared';
+import type { IdeationConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD, Department, HitlConfig, DomainChoice } from '@daio/shared';
 import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
@@ -178,19 +178,36 @@ export class PipelineOrchestrator {
       await this.checkApprovalGate('ideation');
     }
 
-    // Stage 2: Branding (Prism picks name + CFO buys domain atomically)
+    // Stage 2: Branding (Prism picks name → HITL selects domain → CFO buys)
     let domainName: string | null = null;
     const brandingStage = getStatus('branding');
     if (brandingStage?.status === 'completed' && brandingStage.output_context) {
       console.log(`Run ${this.runId}: skipping completed branding`);
-      const ctx = brandingStage.output_context as { productName?: string; domain?: string };
-      if (ctx.productName) prd.productName = ctx.productName;
-      domainName = ctx.domain ?? null;
+      const ctx = brandingStage.output_context as Record<string, unknown>;
+      if (ctx.productName) prd.productName = ctx.productName as string;
+      domainName = (ctx.domain as string) ?? null;
+      // Crash recovery: approved but purchase didn't complete
+      if (!domainName && ctx.chosen) {
+        const purchaseResult = await this.completeBrandingPurchase(
+          ctx.chosen as DomainChoice, prd, productDir,
+        );
+        prd = purchaseResult.prd;
+        domainName = purchaseResult.domainName;
+      }
     } else if (brandingStage?.status === 'awaiting_approval') {
-      const ctx = brandingStage.output_context as { productName?: string; domain?: string } | null;
-      if (ctx?.productName) prd.productName = ctx.productName;
-      domainName = ctx?.domain ?? null;
       await this.checkApprovalGate('branding');
+      // After approval, read chosen domain and purchase
+      const freshCtx = await this.getBrandingOutputContext();
+      if (freshCtx?.chosen) {
+        const purchaseResult = await this.completeBrandingPurchase(
+          freshCtx.chosen as DomainChoice, prd, productDir,
+        );
+        prd = purchaseResult.prd;
+        domainName = purchaseResult.domainName;
+      } else if (freshCtx?.domain) {
+        if (freshCtx.productName) prd.productName = freshCtx.productName as string;
+        domainName = freshCtx.domain as string;
+      }
     } else if (brandingStage?.status === 'failed') {
       throw new Error('Branding previously failed');
     } else {
@@ -199,6 +216,17 @@ export class PipelineOrchestrator {
       prd = brandResult.prd;
       domainName = brandResult.domainName;
       await this.checkApprovalGate('branding');
+      // After approval gate: if HITL was enabled, purchase the chosen domain
+      if (!domainName) {
+        const freshCtx = await this.getBrandingOutputContext();
+        if (freshCtx?.chosen) {
+          const purchaseResult = await this.completeBrandingPurchase(
+            freshCtx.chosen as DomainChoice, prd, productDir,
+          );
+          prd = purchaseResult.prd;
+          domainName = purchaseResult.domainName;
+        }
+      }
     }
 
     // Stage 3: Planning
@@ -317,7 +345,7 @@ export class PipelineOrchestrator {
     }
   }
 
-  private async runBranding(prd: ProductPRD, config: BrandingConfig, productDir: string): Promise<{ prd: ProductPRD; domainName: string }> {
+  private async runBranding(prd: ProductPRD, config: BrandingConfig, productDir: string): Promise<{ prd: ProductPRD; domainName: string | null }> {
     await this.updateStageStatus('branding', 'running');
 
     try {
@@ -347,13 +375,47 @@ export class PipelineOrchestrator {
       };
       const recommendations = await rankCandidates(candidates, productInfo, maxPrice);
 
+      // Step 3: Check HITL config — if enabled + gate_after_branding, pause for user selection
+      const { data: hitlData } = await db
+        .from('hitl_config')
+        .select('*')
+        .limit(1)
+        .single();
+
+      const hitlEnabled = hitlData?.enabled && (hitlData as HitlConfig).gate_after_branding;
+
+      if (hitlEnabled) {
+        // Store candidates for user selection (don't purchase yet)
+        // If 0 candidates, store empty array — DomainPicker shows error state with re-run option
+        const top3: DomainChoice[] = recommendations.slice(0, 3).map((r) => ({
+          domain: r.domain,
+          name: r.name,
+          price: r.price,
+          tld: r.tld,
+          strategy: r.strategy,
+          reasoning: r.reasoning,
+          score: r.score,
+        }));
+
+        await db.from('run_stages').update({
+          status: 'completed',
+          output_context: { candidates: top3 },
+          cost_usd: branderResult.cost,
+          completed_at: new Date().toISOString(),
+        }).eq('run_id', this.runId).eq('stage', 'branding');
+
+        return { prd, domainName: null };
+      }
+
+      // HITL disabled: fail if no domains available
       if (recommendations.length === 0) {
         throw new Error('No available domains found within budget');
       }
 
+      // HITL disabled: auto-select winner and purchase immediately
       const winner = recommendations[0];
 
-      // Step 3: Purchase the domain via Porkbun (CFO action)
+      // Step 4: Purchase the domain via Porkbun (CFO action)
       let purchaseResult = null;
       let dnsResult = null;
 
@@ -372,9 +434,8 @@ export class PipelineOrchestrator {
         console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
       }
 
-      // Step 4: Run CFO agent for narration/logging
+      // Step 5: Run CFO agent for narration/logging
       const cfoPrompt = buildCFOPrompt(winner.domain, winner.price, winner.name);
-      // Find CFO agent — look for 'cfo' slug in the agents loaded
       const cfoAgentId = await this.resolveCFOAgent();
 
       await this.runner.runOnce(cfoPrompt, {
@@ -385,7 +446,7 @@ export class PipelineOrchestrator {
         agentId: cfoAgentId,
       });
 
-      // Step 5: Update PRD with the final product name
+      // Step 6: Update PRD with the final product name
       prd.productName = winner.name;
 
       // Store branding output
@@ -429,6 +490,89 @@ export class PipelineOrchestrator {
       .limit(1);
 
     return data?.[0]?.id;
+  }
+
+  private async completeBrandingPurchase(
+    chosen: DomainChoice,
+    prd: ProductPRD,
+    productDir: string,
+  ): Promise<{ prd: ProductPRD; domainName: string }> {
+    // Purchase domain via Porkbun
+    let purchaseResult = null;
+    let dnsResult = null;
+
+    if (env.PORKBUN_API_KEY && env.PORKBUN_API_SECRET) {
+      const porkbunConfig: PorkbunConfig = {
+        apiKey: env.PORKBUN_API_KEY,
+        apiSecret: env.PORKBUN_API_SECRET,
+      };
+
+      purchaseResult = await purchaseDomain(chosen.domain, porkbunConfig);
+
+      if (purchaseResult.status === 'purchased') {
+        dnsResult = await configureDNSForVercel(chosen.domain, porkbunConfig);
+      }
+    } else {
+      console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
+    }
+
+    // Run CFO agent for narration
+    const cfoPrompt = buildCFOPrompt(chosen.domain, chosen.price, chosen.name);
+    const cfoAgentId = await this.resolveCFOAgent();
+
+    await this.runner.runOnce(cfoPrompt, {
+      runId: this.runId,
+      stage: 'branding',
+      cwd: productDir,
+      maxBudgetUsd: 1,
+      agentId: cfoAgentId,
+    });
+
+    // Update PRD with chosen name
+    prd.productName = chosen.name;
+
+    // Merge purchase results into branding stage output_context
+    const { data: currentStage } = await db
+      .from('run_stages')
+      .select('output_context')
+      .eq('run_id', this.runId)
+      .eq('stage', 'branding')
+      .single();
+
+    const existingCtx = (currentStage?.output_context as Record<string, unknown>) || {};
+    const mergedCtx = {
+      ...existingCtx,
+      productName: chosen.name,
+      domain: chosen.domain,
+      tld: chosen.tld,
+      price: chosen.price,
+      strategy: chosen.strategy,
+      reasoning: chosen.reasoning,
+      purchased: purchaseResult?.status === 'purchased',
+      dnsConfigured: dnsResult?.allSuccess ?? false,
+    };
+
+    await db.from('run_stages').update({
+      output_context: mergedCtx,
+    }).eq('run_id', this.runId).eq('stage', 'branding');
+
+    // Update run with domain name
+    await db.from('runs').update({
+      domain_name: chosen.domain,
+    }).eq('id', this.runId);
+
+    return { prd, domainName: chosen.domain };
+  }
+
+  private async getBrandingOutputContext(): Promise<Record<string, unknown> | null> {
+    const { data } = await db
+      .from('run_stages')
+      .select('output_context')
+      .eq('run_id', this.runId)
+      .eq('stage', 'branding')
+      .single();
+
+    return (data?.output_context as Record<string, unknown>) ?? null;
   }
 
   private async runPlanning(prd: ProductPRD, config: PlanningConfig, productDir: string): Promise<void> {

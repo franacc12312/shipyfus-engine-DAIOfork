@@ -94,6 +94,17 @@ export interface Product {
   created_at: string;
 }
 
+export interface Participant {
+  id: string;
+  user_id: string | null;
+  name: string;
+  role_title: string;
+  avatar_url: string | null;
+  is_active: boolean;
+  display_order: number;
+  created_at: string;
+}
+
 // Enums and unions
 
 export type Department = 'ideation' | 'branding' | 'planning' | 'development' | 'deployment';
@@ -115,6 +126,16 @@ export interface HitlConfig {
 }
 
 export type HitlGateAction = 'approve' | 'retry' | 'cancel';
+
+export interface DomainChoice {
+  domain: string;
+  name: string;
+  price: number;
+  tld: string;
+  strategy: string;
+  reasoning: string;
+  score: number;
+}
 
 // Constraint config types per department
 
