@@ -1,20 +1,34 @@
-import { useState, useCallback } from 'react';
+import { createContext, createElement, useContext, useState, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { getPassword, setPassword, clearPassword } from '../lib/auth';
 
-export function useAuth() {
-  const [password, setPasswordState] = useState<string | null>(getPassword());
+interface AuthValue {
+  isAdmin: boolean;
+  password: string | null;
+  login: (pw: string) => void;
+  logout: () => void;
+}
 
-  const isAdmin = password !== null;
+const AuthContext = createContext<AuthValue | null>(null);
 
-  const login = useCallback((pw: string) => {
-    setPassword(pw);
-    setPasswordState(pw);
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [pw, setPw] = useState<string | null>(getPassword());
+
+  const login = useCallback((password: string) => {
+    setPassword(password);
+    setPw(password);
   }, []);
 
   const logout = useCallback(() => {
     clearPassword();
-    setPasswordState(null);
+    setPw(null);
   }, []);
 
-  return { isAdmin, password, login, logout };
+  return createElement(AuthContext, { value: { isAdmin: pw !== null, password: pw, login, logout } }, children);
+}
+
+export function useAuth(): AuthValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
 }
