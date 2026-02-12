@@ -10,6 +10,7 @@ import runsRouter from './routes/runs.js';
 import productsRouter from './routes/products.js';
 import agentsRouter from './routes/agents.js';
 import hitlRouter from './routes/hitl.js';
+import participantsRouter from './routes/participants.js';
 
 const app = express();
 
@@ -22,6 +23,7 @@ app.use('/api/runs', runsRouter);
 app.use('/api/products', productsRouter);
 app.use('/api/agents', agentsRouter);
 app.use('/api/hitl-config', hitlRouter);
+app.use('/api/participants', participantsRouter);
 
 app.use(errorHandler);
 
