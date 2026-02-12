@@ -16,7 +16,8 @@ The user provides a worktree name or Linear issue identifier: $ARGUMENTS
 6. Remove the worktree using `git worktree remove <path> --force`.
 7. Delete the feature branch using `git branch -D <branch-name>` (skip if the branch is `main` or `master`).
 8. Run `git worktree prune` to clean up stale worktree references.
-9. Confirm the cleanup is complete and show the updated port registry.
+9. **Update Linear issue**: If a Linear issue identifier can be inferred from the branch name (e.g., `dai-XX`), ask the user if they want to mark the issue as "Done". If yes, update the issue status to "Done" using the Linear MCP tools. If no, leave the issue status unchanged.
+10. Confirm the cleanup is complete and show the updated port registry.
 
 ## Rules
 - NEVER delete the `main` or `master` branch.
