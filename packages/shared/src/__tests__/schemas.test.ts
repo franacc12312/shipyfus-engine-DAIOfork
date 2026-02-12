@@ -8,6 +8,8 @@ import {
   departmentSchema,
   agentSchema,
   agentCharacteristicsSchema,
+  participantSchema,
+  createParticipantSchema,
   stageStatusSchema,
   hitlConfigSchema,
   updateHitlConfigSchema,
@@ -271,6 +273,66 @@ describe('rejectStageSchema', () => {
     expect(STAGE_AGENT_MAP.planning).toBe('planner');
     expect(STAGE_AGENT_MAP.development).toBe('developer');
     expect(STAGE_AGENT_MAP.deployment).toBe('deployer');
+  });
+});
+
+describe('participantSchema', () => {
+  const validParticipant = {
+    id: '550e8400-e29b-41d4-a716-446655440000',
+    user_id: '00000000-0000-0000-0000-000000000001',
+    name: 'De Vinci',
+    role_title: 'Founder',
+    avatar_url: null,
+    is_active: true,
+    display_order: 0,
+    created_at: '2026-02-12T00:00:00.000Z',
+  };
+
+  it('validates a correct participant', () => {
+    expect(participantSchema.parse(validParticipant)).toEqual(validParticipant);
+  });
+
+  it('validates participant with null user_id', () => {
+    const p = { ...validParticipant, user_id: null };
+    expect(participantSchema.parse(p)).toEqual(p);
+  });
+
+  it('rejects participant with missing name', () => {
+    const { name: _, ...noName } = validParticipant;
+    expect(() => participantSchema.parse(noName)).toThrow();
+  });
+
+  it('rejects participant with empty name', () => {
+    expect(() => participantSchema.parse({ ...validParticipant, name: '' })).toThrow();
+  });
+
+  it('rejects participant with invalid uuid id', () => {
+    expect(() => participantSchema.parse({ ...validParticipant, id: 'not-a-uuid' })).toThrow();
+  });
+});
+
+describe('createParticipantSchema', () => {
+  it('validates with required fields only', () => {
+    const input = { name: 'Alice', role_title: 'Engineer' };
+    expect(createParticipantSchema.parse(input)).toEqual(input);
+  });
+
+  it('validates with all optional fields', () => {
+    const input = {
+      name: 'Alice',
+      role_title: 'Engineer',
+      user_id: '550e8400-e29b-41d4-a716-446655440000',
+      avatar_url: 'https://example.com/avatar.png',
+    };
+    expect(createParticipantSchema.parse(input)).toEqual(input);
+  });
+
+  it('rejects missing required name', () => {
+    expect(() => createParticipantSchema.parse({ role_title: 'Engineer' })).toThrow();
+  });
+
+  it('rejects missing required role_title', () => {
+    expect(() => createParticipantSchema.parse({ name: 'Alice' })).toThrow();
   });
 });
 
