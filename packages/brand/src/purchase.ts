@@ -1,4 +1,4 @@
-import type { PorkbunConfig, PurchaseResult, DNSConfigResult } from './types.js';
+import type { PorkbunConfig, PurchaseResult, DNSConfigResult, DomainVerificationResult } from './types.js';
 
 const PORKBUN_BASE = 'https://api.porkbun.com/api/json/v3';
 
@@ -34,13 +34,30 @@ export async function purchaseDomain(
   config: PorkbunConfig
 ): Promise<PurchaseResult> {
   try {
-    const result = await porkbunRequest(`/domain/create/${domain}`, config);
+    // Fetch real pricing first — Porkbun requires cost in pennies
+    const pricing = await checkPorkbunPricing(domain, config);
+    if (!pricing.available || pricing.price <= 0) {
+      return {
+        domain,
+        status: 'failed',
+        price: 0,
+        registrar: 'porkbun',
+        error: 'Could not determine domain pricing',
+      };
+    }
+
+    const costInPennies = Math.round(pricing.price * 100);
+
+    const result = await porkbunRequest(`/domain/create/${domain}`, config, {
+      cost: costInPennies,
+      agreeToTerms: 'yes',
+    });
 
     if (result.status === 'SUCCESS') {
       return {
         domain,
         status: 'purchased',
-        price: 2, // .xyz approximate
+        price: pricing.price,
         registrar: 'porkbun',
       };
     }
@@ -127,5 +144,28 @@ export async function checkPorkbunPricing(
     return { available: false, price: 0 };
   } catch {
     return { available: false, price: 0 };
+  }
+}
+
+export async function verifyDomainOwnership(
+  domain: string,
+  config: PorkbunConfig
+): Promise<DomainVerificationResult> {
+  try {
+    const result = await porkbunRequest('/domain/listAll', config);
+    const domains = result.domains as Array<{ domain: string; status?: string }> | undefined;
+
+    if (!domains || !Array.isArray(domains)) {
+      return { verified: false, domain, error: 'Could not retrieve domain list' };
+    }
+
+    const found = domains.find((d) => d.domain.toLowerCase() === domain.toLowerCase());
+    if (found) {
+      return { verified: true, domain, status: found.status };
+    }
+
+    return { verified: false, domain, error: 'Domain not found in account after purchase' };
+  } catch (err) {
+    return { verified: false, domain, error: (err as Error).message };
   }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { purchaseDomain, configureDNSForVercel, checkPorkbunPricing } from '../purchase.js';
+import { purchaseDomain, configureDNSForVercel, checkPorkbunPricing, verifyDomainOwnership } from '../purchase.js';
 import type { PorkbunConfig } from '../types.js';
 
 const mockFetch = vi.fn();
@@ -14,8 +14,20 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+/** Helper: mock a successful pricing response for .xyz at $2.04 */
+function mockPricingSuccess() {
+  mockFetch.mockResolvedValueOnce({
+    ok: true,
+    json: () => Promise.resolve({
+      status: 'SUCCESS',
+      pricing: { xyz: { registration: '2.04', renewal: '12.00' } },
+    }),
+  });
+}
+
 describe('purchaseDomain', () => {
-  it('calls Porkbun register endpoint with correct body', async () => {
+  it('fetches pricing then calls create with cost and agreeToTerms', async () => {
+    mockPricingSuccess();
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ status: 'SUCCESS' }),
@@ -23,7 +35,15 @@ describe('purchaseDomain', () => {
 
     await purchaseDomain('cool.xyz', config);
 
-    expect(mockFetch).toHaveBeenCalledWith(
+    // First call: pricing
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      1,
+      'https://api.porkbun.com/api/json/v3/pricing/get',
+      expect.objectContaining({ method: 'POST' })
+    );
+    // Second call: domain/create with cost + agreeToTerms
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
       'https://api.porkbun.com/api/json/v3/domain/create/cool.xyz',
       expect.objectContaining({
         method: 'POST',
@@ -31,12 +51,15 @@ describe('purchaseDomain', () => {
         body: JSON.stringify({
           apikey: 'pk1_test',
           secretapikey: 'sk1_test',
+          cost: 204,
+          agreeToTerms: 'yes',
         }),
       })
     );
   });
 
-  it('returns purchased status on success', async () => {
+  it('returns purchased status with real price on success', async () => {
+    mockPricingSuccess();
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ status: 'SUCCESS' }),
@@ -46,10 +69,26 @@ describe('purchaseDomain', () => {
 
     expect(result.status).toBe('purchased');
     expect(result.domain).toBe('cool.xyz');
+    expect(result.price).toBe(2.04);
     expect(result.registrar).toBe('porkbun');
   });
 
+  it('returns failed when pricing is unavailable', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ status: 'SUCCESS', pricing: { com: { registration: '10.00' } } }),
+    });
+
+    const result = await purchaseDomain('cool.xyz', config);
+
+    expect(result.status).toBe('failed');
+    expect(result.error).toBe('Could not determine domain pricing');
+    // Should NOT call domain/create
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('returns failed status on API error response', async () => {
+    mockPricingSuccess();
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ status: 'ERROR', message: 'Domain already registered' }),
@@ -62,6 +101,7 @@ describe('purchaseDomain', () => {
   });
 
   it('returns failed status on network error', async () => {
+    mockPricingSuccess();
     mockFetch.mockRejectedValueOnce(new Error('Network timeout'));
 
     const result = await purchaseDomain('fail.xyz', config);
@@ -70,7 +110,8 @@ describe('purchaseDomain', () => {
     expect(result.error).toBe('Network timeout');
   });
 
-  it('handles non-ok HTTP response', async () => {
+  it('handles non-ok HTTP response on create', async () => {
+    mockPricingSuccess();
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 500,
@@ -209,5 +250,68 @@ describe('checkPorkbunPricing', () => {
 
     expect(result.available).toBe(false);
     expect(result.price).toBe(0);
+  });
+});
+
+describe('verifyDomainOwnership', () => {
+  it('returns verified when domain is found in account', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        status: 'SUCCESS',
+        domains: [
+          { domain: 'cool.xyz', status: 'ACTIVE' },
+          { domain: 'other.com', status: 'ACTIVE' },
+        ],
+      }),
+    });
+
+    const result = await verifyDomainOwnership('cool.xyz', config);
+
+    expect(result.verified).toBe(true);
+    expect(result.domain).toBe('cool.xyz');
+    expect(result.status).toBe('ACTIVE');
+  });
+
+  it('returns not verified when domain is not in account', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        status: 'SUCCESS',
+        domains: [
+          { domain: 'other.com', status: 'ACTIVE' },
+        ],
+      }),
+    });
+
+    const result = await verifyDomainOwnership('cool.xyz', config);
+
+    expect(result.verified).toBe(false);
+    expect(result.error).toContain('not found in account');
+  });
+
+  it('handles API error gracefully', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('API down'));
+
+    const result = await verifyDomainOwnership('cool.xyz', config);
+
+    expect(result.verified).toBe(false);
+    expect(result.error).toBe('API down');
+  });
+
+  it('matches domain case-insensitively', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        status: 'SUCCESS',
+        domains: [
+          { domain: 'COOL.XYZ', status: 'ACTIVE' },
+        ],
+      }),
+    });
+
+    const result = await verifyDomainOwnership('cool.xyz', config);
+
+    expect(result.verified).toBe(true);
   });
 });

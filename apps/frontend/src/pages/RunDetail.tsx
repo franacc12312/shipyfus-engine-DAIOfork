@@ -173,8 +173,23 @@ export function RunDetail() {
                 >
                   {run.domain_name}
                 </a>
+                <span className="ml-1 text-[9px] text-terminal-green font-bold">PURCHASED</span>
               </div>
             )}
+            {(() => {
+              const brandingStage = run.run_stages?.find((s) => s.stage === 'branding');
+              const ctx = brandingStage?.output_context as Record<string, unknown> | undefined;
+              if (ctx?.purchased === false && ctx?.purchaseError) {
+                return (
+                  <div>
+                    <div className="text-[9px] text-zinc-600 uppercase tracking-wider">Domain</div>
+                    <div className="text-xs text-terminal-red font-bold">PURCHASE FAILED</div>
+                    <div className="text-[10px] text-zinc-500 mt-0.5">{String(ctx.purchaseError)}</div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
             {run.deploy_url && (
               <div>
                 <div className="text-[9px] text-zinc-600 uppercase tracking-wider">Deploy URL</div>
