@@ -83,7 +83,10 @@ export class AgentRunner {
           }
         }
 
-        if (content.trim()) {
+        // Skip logging "result" events — their text duplicates what was
+        // already streamed via "assistant" events. Cost/duration metadata
+        // is captured by the runner's return value instead.
+        if (event.type !== 'result' && content.trim()) {
           this.bufferLog({
             run_id: runId,
             stage,
