@@ -13,6 +13,8 @@ import {
   updateHitlConfigSchema,
   hitlGateActionSchema,
   rejectStageSchema,
+  domainChoiceSchema,
+  approveStageSchema,
 } from '../schemas.js';
 import { STAGES, RUN_STATUSES, STAGE_STATUSES, AGENT_SLUGS, STAGE_AGENT_MAP } from '../constants.js';
 
@@ -175,10 +177,11 @@ describe('stageStatusSchema', () => {
 });
 
 describe('hitlConfigSchema', () => {
-  it('validates a complete HITL config', () => {
+  it('validates a complete HITL config including gate_after_branding', () => {
     const config = {
       enabled: true,
       gate_after_ideation: true,
+      gate_after_branding: true,
       gate_after_planning: false,
       gate_after_development: true,
     };
@@ -189,11 +192,23 @@ describe('hitlConfigSchema', () => {
     expect(() => hitlConfigSchema.parse({ enabled: true })).toThrow();
   });
 
+  it('rejects config missing gate_after_branding', () => {
+    expect(() =>
+      hitlConfigSchema.parse({
+        enabled: true,
+        gate_after_ideation: true,
+        gate_after_planning: true,
+        gate_after_development: true,
+      })
+    ).toThrow();
+  });
+
   it('rejects non-boolean values', () => {
     expect(() =>
       hitlConfigSchema.parse({
         enabled: 'yes',
         gate_after_ideation: true,
+        gate_after_branding: true,
         gate_after_planning: true,
         gate_after_development: true,
       })
@@ -204,6 +219,10 @@ describe('hitlConfigSchema', () => {
 describe('updateHitlConfigSchema', () => {
   it('accepts partial updates', () => {
     expect(updateHitlConfigSchema.parse({ enabled: true })).toEqual({ enabled: true });
+  });
+
+  it('accepts partial update with gate_after_branding', () => {
+    expect(updateHitlConfigSchema.parse({ gate_after_branding: false })).toEqual({ gate_after_branding: false });
   });
 
   it('accepts empty object (no changes)', () => {
@@ -251,6 +270,59 @@ describe('rejectStageSchema', () => {
     expect(STAGE_AGENT_MAP.planning).toBe('planner');
     expect(STAGE_AGENT_MAP.development).toBe('developer');
     expect(STAGE_AGENT_MAP.deployment).toBe('deployer');
+  });
+});
+
+describe('domainChoiceSchema', () => {
+  const validChoice = {
+    domain: 'coolapp.xyz',
+    name: 'CoolApp',
+    price: 2,
+    tld: 'xyz',
+    strategy: 'invented',
+    reasoning: 'Short and memorable',
+    score: 85,
+  };
+
+  it('validates a correct domain choice', () => {
+    expect(domainChoiceSchema.parse(validChoice)).toEqual(validChoice);
+  });
+
+  it('rejects empty domain', () => {
+    expect(() => domainChoiceSchema.parse({ ...validChoice, domain: '' })).toThrow();
+  });
+
+  it('rejects missing fields', () => {
+    expect(() => domainChoiceSchema.parse({ domain: 'test.xyz' })).toThrow();
+  });
+
+  it('rejects negative price', () => {
+    expect(() => domainChoiceSchema.parse({ ...validChoice, price: -1 })).toThrow();
+  });
+});
+
+describe('approveStageSchema', () => {
+  it('accepts empty body (no domain choice)', () => {
+    expect(approveStageSchema.parse({})).toEqual({});
+  });
+
+  it('accepts body with chosen_domain', () => {
+    const body = {
+      chosen_domain: {
+        domain: 'coolapp.xyz',
+        name: 'CoolApp',
+        price: 2,
+        tld: 'xyz',
+        strategy: 'invented',
+        reasoning: 'Great name',
+        score: 85,
+      },
+    };
+    expect(approveStageSchema.parse(body)).toEqual(body);
+  });
+
+  it('rejects invalid chosen_domain', () => {
+    expect(() => approveStageSchema.parse({ chosen_domain: { domain: '' } })).toThrow();
   });
 });
 

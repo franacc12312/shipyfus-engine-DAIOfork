@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { AdminGate } from './AdminGate';
+import { DomainPicker } from './DomainPicker';
 import { approveStage, rejectStage } from '../lib/hitl';
 import type { RunStage } from '@daio/shared';
 
 const STAGE_LABELS: Record<string, string> = {
   ideation: 'Ideation',
+  branding: 'Branding',
   planning: 'Planning',
   development: 'Development',
 };
@@ -18,6 +20,12 @@ export function ApprovalGate({ runId, stage }: ApprovalGateProps) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+
+  // Delegate to DomainPicker for branding stage with candidates
+  const ctx = stage.output_context as Record<string, unknown> | null;
+  if (stage.stage === 'branding' && ctx?.candidates) {
+    return <DomainPicker runId={runId} stage={stage} />;
+  }
 
   async function handleApprove() {
     setApproving(true);
