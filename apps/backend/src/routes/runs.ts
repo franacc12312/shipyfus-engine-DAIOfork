@@ -3,7 +3,7 @@ import { db } from '../services/db.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { env } from '../env.js';
 import { startPipeline, resumePipeline, cancelPipeline, getActivePipelineCount } from '../orchestrator/pipeline.js';
-import { rejectStageSchema, departmentSchema } from '@daio/shared';
+import { rejectStageSchema, departmentSchema, approveStageSchema } from '@daio/shared';
 
 const MAX_CONCURRENT_RUNS = 3;
 
@@ -212,13 +212,37 @@ router.post('/:id/stages/:stage/approve', requireAdmin, async (req, res, next) =
       return;
     }
 
-    // Approve: mark stage as completed (orchestrator polls and will continue)
+    // Validate optional body (may contain chosen_domain for branding approval)
+    const bodyParsed = approveStageSchema.safeParse(req.body || {});
+    if (!bodyParsed.success) {
+      res.status(400).json({ error: 'Invalid body' });
+      return;
+    }
+
+    // Build update: mark stage as completed
+    const updateData: Record<string, unknown> = {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    };
+
+    // If chosen_domain provided (branding approval), merge into output_context
+    if (bodyParsed.data.chosen_domain) {
+      const { data: fullStage } = await db
+        .from('run_stages')
+        .select('output_context')
+        .eq('id', stageData.id)
+        .single();
+
+      const existingCtx = (fullStage?.output_context as Record<string, unknown>) || {};
+      updateData.output_context = {
+        ...existingCtx,
+        chosen: bodyParsed.data.chosen_domain,
+      };
+    }
+
     const { error: updateError } = await db
       .from('run_stages')
-      .update({
-        status: 'completed',
-        completed_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', stageData.id);
 
     if (updateError) throw updateError;

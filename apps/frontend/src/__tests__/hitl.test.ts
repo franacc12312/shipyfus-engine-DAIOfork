@@ -52,7 +52,35 @@ describe('HITL API client', () => {
 
     await approveStage('run-123', 'ideation');
 
-    expect(mockPost).toHaveBeenCalledWith('/runs/run-123/stages/ideation/approve');
+    expect(mockPost).toHaveBeenCalledWith('/runs/run-123/stages/ideation/approve', {});
+  });
+
+  it('approveStage sends chosen_domain when provided', async () => {
+    mockPost.mockResolvedValue({ status: 'approved' });
+
+    const chosenDomain = {
+      domain: 'coolapp.xyz',
+      name: 'CoolApp',
+      price: 2,
+      tld: 'xyz',
+      strategy: 'invented',
+      reasoning: 'Great name',
+      score: 85,
+    };
+
+    await approveStage('run-456', 'branding', chosenDomain);
+
+    expect(mockPost).toHaveBeenCalledWith('/runs/run-456/stages/branding/approve', {
+      chosen_domain: chosenDomain,
+    });
+  });
+
+  it('approveStage without chosen_domain sends empty body', async () => {
+    mockPost.mockResolvedValue({ status: 'approved' });
+
+    await approveStage('run-789', 'planning');
+
+    expect(mockPost).toHaveBeenCalledWith('/runs/run-789/stages/planning/approve', {});
   });
 
   it('rejectStage calls POST /runs/:id/stages/:stage/reject with action', async () => {

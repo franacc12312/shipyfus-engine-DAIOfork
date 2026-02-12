@@ -90,6 +90,20 @@ export const updateHitlConfigSchema = z.object({
 
 export const hitlGateActionSchema = z.enum(['approve', 'retry', 'cancel']);
 
+export const domainChoiceSchema = z.object({
+  domain: z.string().min(1),
+  name: z.string().min(1),
+  price: z.number().min(0),
+  tld: z.string().min(1),
+  strategy: z.string().min(1),
+  reasoning: z.string(),
+  score: z.number().min(0),
+});
+
+export const approveStageSchema = z.object({
+  chosen_domain: domainChoiceSchema.optional(),
+});
+
 export const rejectStageSchema = z.object({
   action: z.enum(['retry', 'cancel']),
 });
