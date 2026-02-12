@@ -116,6 +116,16 @@ vi.mock('../agents/runner.js', () => ({
   })),
 }));
 
+// Mock Vercel API
+vi.mock('../services/vercel.js', async () => {
+  const actual = await vi.importActual('../services/vercel.js') as Record<string, unknown>;
+  return {
+    ...actual,
+    addDomainToProject: vi.fn().mockResolvedValue({ success: true, domain: { name: 'testbrand.xyz', verified: true } }),
+    getDomainConfig: vi.fn().mockResolvedValue({ success: true, verified: true, domain: { name: 'testbrand.xyz', verified: true } }),
+  };
+});
+
 // Mock fs
 vi.mock('node:fs', () => ({
   mkdirSync: vi.fn(),
@@ -170,7 +180,7 @@ describe('PipelineOrchestrator', () => {
     // Deployment
     .mockResolvedValueOnce({
       text: 'deployed',
-      json: { deployUrl: 'https://test.vercel.app', provider: 'vercel', status: 'deployed' },
+      json: { deployUrl: 'https://test.vercel.app', projectName: 'test', provider: 'vercel', status: 'deployed' },
       cost: 0.02,
     });
 

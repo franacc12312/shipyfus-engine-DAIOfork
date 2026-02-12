@@ -12,6 +12,7 @@ import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js
 import { rankCandidates, purchaseDomain, configureDNSForVercel } from '@daio/brand';
 import type { BrandCandidate, PorkbunConfig } from '@daio/brand';
 import type { IdeationConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD, Department, HitlConfig } from '@daio/shared';
+import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
 
@@ -236,7 +237,30 @@ export class PipelineOrchestrator {
       throw new Error('Deployment previously failed');
     } else {
       if (this.cancelled) return;
-      const deployResult = await this.runDeployment(constraints.deployment, productDir, domainName);
+      const deployResult = await this.runDeployment(constraints.deployment, productDir);
+
+      // Programmatically attach purchased domain to Vercel project
+      const projectId = deployResult.projectName
+        ?? (deployResult.deployUrl ? parseProjectNameFromUrl(deployResult.deployUrl) : null);
+
+      if (domainName && projectId && env.VERCEL_TOKEN) {
+        if (!deployResult.projectName && projectId) {
+          await this.insertLog('deployment', `No projectName from agent — falling back to parsed name: ${projectId}`);
+        }
+        const domainResult = await this.attachDomainToDeployment(projectId, domainName);
+        if (domainResult.attached) {
+          await this.insertLog('deployment',
+            domainResult.verified
+              ? `Domain ${domainName} attached and verified on Vercel`
+              : `Domain ${domainName} attached to Vercel — DNS verification pending`
+          );
+        }
+      } else if (domainName && !projectId) {
+        await this.insertLog('deployment', `Domain ${domainName} not attached — could not determine Vercel project name from deployment`);
+      } else if (domainName && !env.VERCEL_TOKEN) {
+        await this.insertLog('deployment', `Domain ${domainName} not attached — VERCEL_TOKEN not configured`);
+      }
+
       await this.registerProduct(prd, { ...deployResult, domainName }, productDir);
     }
 
@@ -469,11 +493,11 @@ export class PipelineOrchestrator {
     }
   }
 
-  private async runDeployment(config: DeploymentConfig, productDir: string, domainName?: string | null): Promise<{ deployUrl: string | null }> {
+  private async runDeployment(config: DeploymentConfig, productDir: string): Promise<{ deployUrl: string | null; projectName: string | null }> {
     await this.updateStageStatus('deployment', 'running');
 
     try {
-      const prompt = buildDeployerPrompt(config, env.VERCEL_TOKEN, domainName ?? undefined);
+      const prompt = buildDeployerPrompt(config, env.VERCEL_TOKEN);
       const result = await this.runner.runOnce(prompt, {
         runId: this.runId,
         stage: 'deployment',
@@ -482,8 +506,9 @@ export class PipelineOrchestrator {
         agentId: this.agentMap.get('deployment'),
       });
 
-      const deployResult = result.json as { deployUrl: string | null; status: string } | null;
+      const deployResult = result.json as { deployUrl: string | null; projectName?: string | null; status: string } | null;
       const deployUrl = deployResult?.deployUrl || null;
+      const projectName = deployResult?.projectName || null;
 
       await db.from('run_stages').update({
         status: 'completed',
@@ -496,10 +521,38 @@ export class PipelineOrchestrator {
         await db.from('runs').update({ deploy_url: deployUrl }).eq('id', this.runId);
       }
 
-      return { deployUrl };
+      return { deployUrl, projectName };
     } catch (err) {
       if (!this.cancelled) await this.updateStageStatus('deployment', 'failed');
       throw err;
+    }
+  }
+
+  private async attachDomainToDeployment(
+    projectName: string,
+    domainName: string
+  ): Promise<{ attached: boolean; verified: boolean; error?: string }> {
+    try {
+      await this.insertLog('deployment', `Attaching domain ${domainName} to Vercel project ${projectName}...`);
+
+      const addResult = await addDomainToProject(projectName, domainName, env.VERCEL_TOKEN);
+      if (!addResult.success) {
+        const msg = `Failed to add domain ${domainName}: ${addResult.error}`;
+        console.warn(`Run ${this.runId}: ${msg}`);
+        await this.insertLog('deployment', msg);
+        return { attached: false, verified: false, error: addResult.error };
+      }
+
+      // Check verification status
+      const configResult = await getDomainConfig(projectName, domainName, env.VERCEL_TOKEN);
+      const verified = configResult.success && configResult.verified;
+
+      return { attached: true, verified };
+    } catch (err) {
+      const msg = `Domain attachment error: ${(err as Error).message}`;
+      console.warn(`Run ${this.runId}: ${msg}`);
+      await this.insertLog('deployment', msg);
+      return { attached: false, verified: false, error: (err as Error).message };
     }
   }
 
