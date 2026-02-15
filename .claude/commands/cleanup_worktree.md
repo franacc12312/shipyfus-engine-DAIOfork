@@ -12,12 +12,17 @@ The user provides a worktree name or Linear issue identifier: $ARGUMENTS
 2. Get the branch name associated with the worktree by running `git worktree list` and finding the matching entry.
 3. Confirm with the user: show the worktree path and branch name, ask if they want to proceed.
 4. If the current working directory is inside the worktree being removed, `cd` to the project root first.
-5. **Deallocate ports**: Read `.worktrees/ports.json`, remove the entry for this worktree's branch name, and write the updated registry back. NEVER remove the "main" entry.
-6. Remove the worktree using `git worktree remove <path> --force`.
-7. Delete the feature branch using `git branch -D <branch-name>` (skip if the branch is `main` or `master`).
-8. Run `git worktree prune` to clean up stale worktree references.
-9. **Update Linear issue**: If a Linear issue identifier can be inferred from the branch name (e.g., `dai-XX`), ask the user if they want to mark the issue as "Done". If yes, update the issue status to "Done" using the Linear MCP tools. If no, leave the issue status unchanged.
-10. Confirm the cleanup is complete and show the updated port registry.
+5. **Deallocate ports and check for Supabase branch**: Read `.worktrees/ports.json`, check the worktree's entry for a `branch` field (save it for step 6), then remove the entry from the registry and write the updated file back. NEVER remove the "main" entry.
+6. **Delete Supabase branch if it exists:** If the entry from step 5 had a `branch` field:
+   ```bash
+   supabase branches delete <branch-name> --project-ref yxwkvbvbugknxdrvpzlq --yes
+   ```
+   If deletion fails → warn the user and provide the manual command, but continue cleanup.
+7. Remove the worktree using `git worktree remove <path> --force`.
+8. Delete the feature branch using `git branch -D <branch-name>` (skip if the branch is `main` or `master`).
+9. Run `git worktree prune` to clean up stale worktree references.
+10. **Update Linear issue**: If a Linear issue identifier can be inferred from the branch name (e.g., `dai-XX`), ask the user if they want to mark the issue as "Done". If yes, update the issue status to "Done" using the Linear MCP tools. If no, leave the issue status unchanged.
+11. Confirm the cleanup is complete and show the updated port registry.
 
 ## Rules
 - NEVER delete the `main` or `master` branch.
@@ -25,4 +30,7 @@ The user provides a worktree name or Linear issue identifier: $ARGUMENTS
 - Always `cd` to the project root before removing a worktree if currently inside it.
 - If the worktree has uncommitted changes, warn the user and ask for confirmation before proceeding.
 - If the worktree directory doesn't exist but the git reference does, still clean up with `git worktree prune`. Still remove the port entry.
+- Supabase branch deletion failure is non-fatal — always continue with worktree removal.
+- Always use `--yes` to skip interactive prompts when deleting Supabase branches.
+- Always use `--project-ref yxwkvbvbugknxdrvpzlq` explicitly for Supabase branch commands.
 - After cleanup, confirm the worktree and branch are gone.

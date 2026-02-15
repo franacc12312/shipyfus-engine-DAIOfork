@@ -68,8 +68,9 @@ function groupLogs(
   let prevIteration = 0;
 
   for (const log of logs) {
-    // Skip empty content
+    // Skip empty content and "result" events (duplicates of assistant content)
     if (!log.content || !log.content.trim()) continue;
+    if (log.event_type === 'result') continue;
 
     const agent = resolveAgent(log, agentsById, agentsByStage);
 
