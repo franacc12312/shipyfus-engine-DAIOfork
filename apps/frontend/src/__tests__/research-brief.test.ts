@@ -93,7 +93,7 @@ describe('ResearchBriefViewer HITL actions', () => {
 
     await approveStage('run-789', 'research');
 
-    expect(mockPost).toHaveBeenCalledWith('/runs/run-789/stages/research/approve');
+    expect(mockPost).toHaveBeenCalledWith('/runs/run-789/stages/research/approve', {});
   });
 
   it('retry calls POST /runs/:id/stages/research/reject with retry action', async () => {
