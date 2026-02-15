@@ -1,9 +1,13 @@
 import { Router } from 'express';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { db } from '../services/db.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { env } from '../env.js';
 import { startPipeline, resumePipeline, cancelPipeline, getActivePipelineCount } from '../orchestrator/pipeline.js';
 import { rejectStageSchema, departmentSchema, approveStageSchema } from '@daio/shared';
+
+const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
 
 const MAX_CONCURRENT_RUNS = 3;
 
@@ -60,6 +64,30 @@ router.get('/:id/logs', async (req, res, next) => {
 
     if (error) throw error;
     res.json(data || []);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/documents', async (req, res, next) => {
+  try {
+    const runId = String(req.params.id);
+    const thoughtsDir = resolve(PRODUCTS_DIR, runId, 'thoughts');
+
+    async function readDoc(filename: string): Promise<string | null> {
+      try {
+        return await readFile(resolve(thoughtsDir, filename), 'utf-8');
+      } catch {
+        return null;
+      }
+    }
+
+    const [plan, progress] = await Promise.all([
+      readDoc('PLAN.md'),
+      readDoc('PROGRESS.md'),
+    ]);
+
+    res.json({ plan, progress });
   } catch (err) {
     next(err);
   }
