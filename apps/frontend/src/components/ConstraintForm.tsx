@@ -8,6 +8,11 @@ interface ConstraintFormProps {
 }
 
 const DEPARTMENT_FIELDS: Record<string, { label: string; key: string; type: string; options?: string[] }[]> = {
+  research: [
+    { label: 'Enabled', key: 'enabled', type: 'toggle' },
+    { label: 'Topics (comma-separated)', key: 'topics', type: 'text' },
+    { label: 'Max Searches', key: 'max_searches', type: 'number' },
+  ],
   ideation: [
     { label: 'Platform', key: 'platform', type: 'select', options: ['web', 'cli', 'api', 'library'] },
     { label: 'Audience', key: 'audience', type: 'select', options: ['consumer', 'developer', 'business'] },

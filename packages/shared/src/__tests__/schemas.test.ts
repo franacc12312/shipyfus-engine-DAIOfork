@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  researchConfigSchema,
   ideationConfigSchema,
   brandingConfigSchema,
   planningConfigSchema,
@@ -8,13 +9,46 @@ import {
   departmentSchema,
   agentSchema,
   agentCharacteristicsSchema,
+  participantSchema,
+  createParticipantSchema,
   stageStatusSchema,
   hitlConfigSchema,
   updateHitlConfigSchema,
   hitlGateActionSchema,
   rejectStageSchema,
+  domainChoiceSchema,
+  approveStageSchema,
 } from '../schemas.js';
 import { STAGES, RUN_STATUSES, STAGE_STATUSES, AGENT_SLUGS, STAGE_AGENT_MAP } from '../constants.js';
+
+describe('researchConfigSchema', () => {
+  it('validates a correct research config', () => {
+    const config = {
+      enabled: true,
+      topics: ['AI tools', 'productivity'],
+      max_searches: 10,
+      sources: ['tavily', 'producthunt'],
+      custom_rules: ['Focus on developer tools'],
+    };
+    expect(researchConfigSchema.parse(config)).toEqual(config);
+  });
+
+  it('accepts empty config (all optional)', () => {
+    expect(researchConfigSchema.parse({})).toEqual({});
+  });
+
+  it('rejects max_searches below 1', () => {
+    expect(() =>
+      researchConfigSchema.parse({ max_searches: 0 })
+    ).toThrow();
+  });
+
+  it('rejects max_searches above 20', () => {
+    expect(() =>
+      researchConfigSchema.parse({ max_searches: 25 })
+    ).toThrow();
+  });
+});
 
 describe('ideationConfigSchema', () => {
   it('validates a correct ideation config', () => {
@@ -127,8 +161,8 @@ describe('deploymentConfigSchema', () => {
 });
 
 describe('departmentSchema', () => {
-  it('validates all department names including branding', () => {
-    for (const dept of ['ideation', 'branding', 'planning', 'development', 'deployment']) {
+  it('validates all department names including research and branding', () => {
+    for (const dept of ['research', 'ideation', 'branding', 'planning', 'development', 'deployment']) {
       expect(departmentSchema.parse(dept)).toBe(dept);
     }
   });
@@ -139,9 +173,9 @@ describe('departmentSchema', () => {
 });
 
 describe('constants', () => {
-  it('STAGES has exactly 5 entries in correct order', () => {
-    expect(STAGES).toEqual(['ideation', 'branding', 'planning', 'development', 'deployment']);
-    expect(STAGES).toHaveLength(5);
+  it('STAGES has exactly 6 entries in correct order', () => {
+    expect(STAGES).toEqual(['research', 'ideation', 'branding', 'planning', 'development', 'deployment']);
+    expect(STAGES).toHaveLength(6);
   });
 
   it('RUN_STATUSES has all expected values', () => {
@@ -176,9 +210,10 @@ describe('stageStatusSchema', () => {
 });
 
 describe('hitlConfigSchema', () => {
-  it('validates a complete HITL config', () => {
+  it('validates a complete HITL config including gate_after_research and gate_after_branding', () => {
     const config = {
       enabled: true,
+      gate_after_research: true,
       gate_after_ideation: true,
       gate_after_branding: true,
       gate_after_planning: false,
@@ -191,10 +226,23 @@ describe('hitlConfigSchema', () => {
     expect(() => hitlConfigSchema.parse({ enabled: true })).toThrow();
   });
 
+  it('rejects config missing gate_after_research', () => {
+    expect(() =>
+      hitlConfigSchema.parse({
+        enabled: true,
+        gate_after_ideation: true,
+        gate_after_branding: true,
+        gate_after_planning: true,
+        gate_after_development: true,
+      })
+    ).toThrow();
+  });
+
   it('rejects non-boolean values', () => {
     expect(() =>
       hitlConfigSchema.parse({
         enabled: 'yes',
+        gate_after_research: true,
         gate_after_ideation: true,
         gate_after_branding: true,
         gate_after_planning: true,
@@ -207,6 +255,10 @@ describe('hitlConfigSchema', () => {
 describe('updateHitlConfigSchema', () => {
   it('accepts partial updates', () => {
     expect(updateHitlConfigSchema.parse({ enabled: true })).toEqual({ enabled: true });
+  });
+
+  it('accepts partial update with gate_after_branding', () => {
+    expect(updateHitlConfigSchema.parse({ gate_after_branding: false })).toEqual({ gate_after_branding: false });
   });
 
   it('accepts empty object (no changes)', () => {
@@ -239,7 +291,8 @@ describe('rejectStageSchema', () => {
     expect(() => rejectStageSchema.parse({ action: 'approve' })).toThrow();
   });
 
-  it('AGENT_SLUGS has all 6 agent slugs', () => {
+  it('AGENT_SLUGS has all 7 agent slugs', () => {
+    expect(AGENT_SLUGS.RESEARCHER).toBe('researcher');
     expect(AGENT_SLUGS.IDEATOR).toBe('ideator');
     expect(AGENT_SLUGS.BRANDER).toBe('brander');
     expect(AGENT_SLUGS.CFO).toBe('cfo');
@@ -249,11 +302,125 @@ describe('rejectStageSchema', () => {
   });
 
   it('STAGE_AGENT_MAP maps all stages to agent slugs', () => {
+    expect(STAGE_AGENT_MAP.research).toBe('researcher');
     expect(STAGE_AGENT_MAP.ideation).toBe('ideator');
     expect(STAGE_AGENT_MAP.branding).toBe('brander');
     expect(STAGE_AGENT_MAP.planning).toBe('planner');
     expect(STAGE_AGENT_MAP.development).toBe('developer');
     expect(STAGE_AGENT_MAP.deployment).toBe('deployer');
+  });
+});
+
+describe('participantSchema', () => {
+  const validParticipant = {
+    id: '550e8400-e29b-41d4-a716-446655440000',
+    user_id: '00000000-0000-0000-0000-000000000001',
+    name: 'De Vinci',
+    role_title: 'Founder',
+    avatar_url: null,
+    is_active: true,
+    display_order: 0,
+    created_at: '2026-02-12T00:00:00.000Z',
+  };
+
+  it('validates a correct participant', () => {
+    expect(participantSchema.parse(validParticipant)).toEqual(validParticipant);
+  });
+
+  it('validates participant with null user_id', () => {
+    const p = { ...validParticipant, user_id: null };
+    expect(participantSchema.parse(p)).toEqual(p);
+  });
+
+  it('rejects participant with missing name', () => {
+    const { name: _, ...noName } = validParticipant;
+    expect(() => participantSchema.parse(noName)).toThrow();
+  });
+
+  it('rejects participant with empty name', () => {
+    expect(() => participantSchema.parse({ ...validParticipant, name: '' })).toThrow();
+  });
+
+  it('rejects participant with invalid uuid id', () => {
+    expect(() => participantSchema.parse({ ...validParticipant, id: 'not-a-uuid' })).toThrow();
+  });
+});
+
+describe('createParticipantSchema', () => {
+  it('validates with required fields only', () => {
+    const input = { name: 'Alice', role_title: 'Engineer' };
+    expect(createParticipantSchema.parse(input)).toEqual(input);
+  });
+
+  it('validates with all optional fields', () => {
+    const input = {
+      name: 'Alice',
+      role_title: 'Engineer',
+      user_id: '550e8400-e29b-41d4-a716-446655440000',
+      avatar_url: 'https://example.com/avatar.png',
+    };
+    expect(createParticipantSchema.parse(input)).toEqual(input);
+  });
+
+  it('rejects missing required name', () => {
+    expect(() => createParticipantSchema.parse({ role_title: 'Engineer' })).toThrow();
+  });
+
+  it('rejects missing required role_title', () => {
+    expect(() => createParticipantSchema.parse({ name: 'Alice' })).toThrow();
+  });
+});
+
+describe('domainChoiceSchema', () => {
+  const validChoice = {
+    domain: 'coolapp.xyz',
+    name: 'CoolApp',
+    price: 2,
+    tld: 'xyz',
+    strategy: 'invented',
+    reasoning: 'Short and memorable',
+    score: 85,
+  };
+
+  it('validates a correct domain choice', () => {
+    expect(domainChoiceSchema.parse(validChoice)).toEqual(validChoice);
+  });
+
+  it('rejects empty domain', () => {
+    expect(() => domainChoiceSchema.parse({ ...validChoice, domain: '' })).toThrow();
+  });
+
+  it('rejects missing fields', () => {
+    expect(() => domainChoiceSchema.parse({ domain: 'test.xyz' })).toThrow();
+  });
+
+  it('rejects negative price', () => {
+    expect(() => domainChoiceSchema.parse({ ...validChoice, price: -1 })).toThrow();
+  });
+});
+
+describe('approveStageSchema', () => {
+  it('accepts empty body (no domain choice)', () => {
+    expect(approveStageSchema.parse({})).toEqual({});
+  });
+
+  it('accepts body with chosen_domain', () => {
+    const body = {
+      chosen_domain: {
+        domain: 'coolapp.xyz',
+        name: 'CoolApp',
+        price: 2,
+        tld: 'xyz',
+        strategy: 'invented',
+        reasoning: 'Great name',
+        score: 85,
+      },
+    };
+    expect(approveStageSchema.parse(body)).toEqual(body);
+  });
+
+  it('rejects invalid chosen_domain', () => {
+    expect(() => approveStageSchema.parse({ chosen_domain: { domain: '' } })).toThrow();
   });
 });
 

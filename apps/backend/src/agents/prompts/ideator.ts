@@ -1,8 +1,15 @@
 import type { IdeationConfig } from '@daio/shared';
 
-export function buildIdeatorPrompt(config: IdeationConfig): string {
-  return `You are an AI product ideation specialist. Generate ONE innovative software product idea.
+export function buildIdeatorPrompt(config: IdeationConfig, researchMarkdown?: string): string {
+  const researchSection = researchMarkdown ? `
+## Market Research (from Scout)
+${researchMarkdown}
 
+Use this research to generate an idea that addresses REAL problems and fills ACTUAL market gaps. Don't just generate from training data — leverage these findings.
+` : '';
+
+  return `You are an AI product ideation specialist. Generate ONE innovative software product idea.
+${researchSection}
 ## Constraints
 - Platform: ${config.platform}
 - Target audience: ${config.audience}

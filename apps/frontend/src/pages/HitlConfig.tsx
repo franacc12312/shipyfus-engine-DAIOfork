@@ -4,6 +4,7 @@ import { fetchHitlConfig, updateHitlConfig } from '../lib/hitl';
 import type { HitlConfig as HitlConfigType } from '@daio/shared';
 
 const GATE_FIELDS = [
+  { key: 'gate_after_research' as const, label: 'After Research', desc: 'Pause before ideation begins' },
   { key: 'gate_after_ideation' as const, label: 'After Ideation', desc: 'Pause before branding begins' },
   { key: 'gate_after_branding' as const, label: 'After Branding', desc: 'Pause before planning begins' },
   { key: 'gate_after_planning' as const, label: 'After Planning', desc: 'Pause before development begins' },
@@ -31,6 +32,7 @@ export function HitlConfig() {
     try {
       const updated = await updateHitlConfig({
         enabled: config.enabled,
+        gate_after_research: config.gate_after_research,
         gate_after_ideation: config.gate_after_ideation,
         gate_after_branding: config.gate_after_branding,
         gate_after_planning: config.gate_after_planning,
@@ -115,7 +117,7 @@ export function HitlConfig() {
 
           {/* Pipeline visualization */}
           <div className="flex items-center justify-center gap-1 mb-6 py-3">
-            {['Ideation', 'Branding', 'Planning', 'Development', 'Deployment'].map((stage, i) => {
+            {['Research', 'Ideation', 'Branding', 'Planning', 'Development', 'Deployment'].map((stage, i) => {
               const gateField = GATE_FIELDS[i];
               const gateActive = config.enabled && gateField && config[gateField.key];
               return (

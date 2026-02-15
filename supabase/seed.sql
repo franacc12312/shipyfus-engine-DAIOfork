@@ -2,8 +2,11 @@
 insert into public.users (id, email, role) values
   ('00000000-0000-0000-0000-000000000001', 'owner@daio.local', 'owner');
 
--- Default constraints for all 4 departments
+-- Default constraints for all departments
 insert into public.constraints (department, config, updated_by) values
+  ('research', '{
+    "enabled": false
+  }', '00000000-0000-0000-0000-000000000001'),
   ('ideation', '{
     "platform": "web",
     "audience": "consumer",

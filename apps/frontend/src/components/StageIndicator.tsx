@@ -2,6 +2,7 @@ import { STAGES } from '@daio/shared';
 import type { RunStage } from '@daio/shared';
 
 const STAGE_LABELS: Record<string, string> = {
+  research: 'Research',
   ideation: 'Ideation',
   branding: 'Branding',
   planning: 'Planning',
@@ -54,6 +55,7 @@ export function StageIndicator({ stages }: StageIndicatorProps) {
                     status === 'awaiting_approval' ? 'bg-terminal-amber/30 border border-terminal-amber pulse-dot' :
                     status === 'cancelled' ? 'bg-terminal-amber/30 border border-terminal-amber' :
                     status === 'failed' ? 'bg-terminal-red/30 border border-terminal-red' :
+                    status === 'skipped' ? 'bg-zinc-800 border border-zinc-700' :
                     'bg-zinc-800 border border-zinc-600'
                   }`}
                 >
@@ -61,6 +63,7 @@ export function StageIndicator({ stages }: StageIndicatorProps) {
                   {status === 'awaiting_approval' && '!'}
                   {status === 'cancelled' && '⊘'}
                   {status === 'failed' && '×'}
+                  {status === 'skipped' && '—'}
                 </div>
 
                 <span
@@ -70,6 +73,7 @@ export function StageIndicator({ stages }: StageIndicatorProps) {
                     status === 'awaiting_approval' ? 'text-terminal-amber' :
                     status === 'cancelled' ? 'text-terminal-amber' :
                     status === 'failed' ? 'text-terminal-red' :
+                    status === 'skipped' ? 'text-zinc-600' :
                     'text-zinc-500'
                   }`}
                 >
@@ -79,6 +83,9 @@ export function StageIndicator({ stages }: StageIndicatorProps) {
                   )}
                   {status === 'cancelled' && (
                     <span className="ml-1 text-[8px] text-terminal-amber/70">CANCELLED</span>
+                  )}
+                  {status === 'skipped' && (
+                    <span className="ml-1 text-[8px] text-zinc-600">SKIPPED</span>
                   )}
                 </span>
               </div>

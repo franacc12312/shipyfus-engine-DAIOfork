@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const dbOps: { table: string; op: string; data?: any; filters?: any }[] = [];
 
 // Configurable mock responses
-let hitlConfig = { enabled: false, gate_after_ideation: true, gate_after_branding: true, gate_after_planning: true, gate_after_development: true };
+let hitlConfig = { enabled: false, gate_after_research: true, gate_after_ideation: true, gate_after_branding: true, gate_after_planning: true, gate_after_development: true };
 let stageStatusResponses: Record<string, string> = {};
 let pollCount = 0;
 
@@ -56,7 +56,9 @@ vi.mock('../services/db.js', () => {
                 ...chain,
                 then: (resolve: any) => resolve({
                   data: [
+                    { department: 'research', config: { enabled: false } },
                     { department: 'ideation', config: { platform: 'web' } },
+                    { department: 'branding', config: {} },
                     { department: 'planning', config: {} },
                     { department: 'development', config: { max_iterations: 3 } },
                     { department: 'deployment', config: {} },
@@ -81,7 +83,9 @@ vi.mock('../services/db.js', () => {
                       }),
                       then: (resolve: any) => resolve({
                         data: [
+                          { stage: 'research', status: 'pending', output_context: null },
                           { stage: 'ideation', status: 'pending', output_context: null },
+                          { stage: 'branding', status: 'pending', output_context: null },
                           { stage: 'planning', status: 'pending', output_context: null },
                           { stage: 'development', status: 'pending', output_context: null },
                           { stage: 'deployment', status: 'pending', output_context: null },
@@ -106,7 +110,27 @@ vi.mock('../env.js', () => ({
   env: {
     VERCEL_TOKEN: 'test-token',
     OWNER_USER_ID: '00000000-0000-0000-0000-000000000001',
+    PORKBUN_API_KEY: 'pk1_test',
+    PORKBUN_API_SECRET: 'sk1_test',
+    TAVILY_API_KEY: '',
   },
+}));
+
+vi.mock('@daio/research', () => ({
+  ResearchService: vi.fn().mockImplementation(() => ({
+    addSource: vi.fn(),
+    gather: vi.fn().mockResolvedValue({ signals: [], sourcesUsed: [], totalSignals: 0, sourceResults: [] }),
+  })),
+  TavilySource: vi.fn(),
+  ProductHuntSource: vi.fn(),
+  HackerNewsSource: vi.fn(),
+  RedditSource: vi.fn(),
+}));
+
+vi.mock('@daio/brand', () => ({
+  rankCandidates: vi.fn().mockResolvedValue([]),
+  purchaseDomain: vi.fn().mockResolvedValue({ domain: 'test.xyz', status: 'purchased', price: 2, registrar: 'porkbun' }),
+  configureDNSForVercel: vi.fn().mockResolvedValue({ domain: 'test.xyz', records: [], allSuccess: true }),
 }));
 
 vi.mock('../agents/runner.js', () => ({
@@ -129,7 +153,7 @@ describe('checkApprovalGate', () => {
     vi.clearAllMocks();
     dbOps.length = 0;
     pollCount = 0;
-    hitlConfig = { enabled: false, gate_after_ideation: true, gate_after_branding: true, gate_after_planning: true, gate_after_development: true };
+    hitlConfig = { enabled: false, gate_after_research: true, gate_after_ideation: true, gate_after_branding: true, gate_after_planning: true, gate_after_development: true };
     stageStatusResponses = {};
   });
 

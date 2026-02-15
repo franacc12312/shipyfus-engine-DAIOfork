@@ -94,9 +94,20 @@ export interface Product {
   created_at: string;
 }
 
+export interface Participant {
+  id: string;
+  user_id: string | null;
+  name: string;
+  role_title: string;
+  avatar_url: string | null;
+  is_active: boolean;
+  display_order: number;
+  created_at: string;
+}
+
 // Enums and unions
 
-export type Department = 'ideation' | 'branding' | 'planning' | 'development' | 'deployment';
+export type Department = 'research' | 'ideation' | 'branding' | 'planning' | 'development' | 'deployment';
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped' | 'awaiting_approval';
 export type ProductStatus = 'built' | 'tested' | 'deployed' | 'archived';
@@ -106,6 +117,7 @@ export type ProductStatus = 'built' | 'tested' | 'deployed' | 'archived';
 export interface HitlConfig {
   id: string;
   enabled: boolean;
+  gate_after_research: boolean;
   gate_after_ideation: boolean;
   gate_after_branding: boolean;
   gate_after_planning: boolean;
@@ -116,7 +128,25 @@ export interface HitlConfig {
 
 export type HitlGateAction = 'approve' | 'retry' | 'cancel';
 
+export interface DomainChoice {
+  domain: string;
+  name: string;
+  price: number;
+  tld: string;
+  strategy: string;
+  reasoning: string;
+  score: number;
+}
+
 // Constraint config types per department
+
+export interface ResearchConfig {
+  enabled?: boolean;
+  topics?: string[];
+  max_searches?: number;
+  sources?: string[];
+  custom_rules?: string[];
+}
 
 export interface IdeationConfig {
   platform?: 'web' | 'cli' | 'api' | 'library';
@@ -153,7 +183,7 @@ export interface DeploymentConfig {
   custom_rules?: string[];
 }
 
-export type ConstraintConfig = IdeationConfig | BrandingConfig | PlanningConfig | DevelopmentConfig | DeploymentConfig;
+export type ConstraintConfig = ResearchConfig | IdeationConfig | BrandingConfig | PlanningConfig | DevelopmentConfig | DeploymentConfig;
 
 // PRD output from ideation
 export interface ProductPRD {
