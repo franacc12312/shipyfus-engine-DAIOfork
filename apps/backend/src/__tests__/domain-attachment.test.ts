@@ -53,6 +53,15 @@ vi.mock('../services/db.js', () => {
               }),
             };
           }
+          if (table === 'run_stages') {
+            return {
+              ...chainable,
+              single: vi.fn().mockResolvedValue({
+                data: { output_context: { purchased: true }, status: 'completed' },
+                error: null,
+              }),
+            };
+          }
           return chainable;
         },
       }),
@@ -75,6 +84,7 @@ vi.mock('@daio/brand', () => ({
   ]),
   purchaseDomain: vi.fn().mockResolvedValue({ domain: 'testbrand.xyz', status: 'purchased', price: 2, registrar: 'porkbun' }),
   configureDNSForVercel: vi.fn().mockResolvedValue({ domain: 'testbrand.xyz', records: [], allSuccess: true }),
+  verifyDomainOwnership: vi.fn().mockResolvedValue({ verified: true, domain: 'testbrand.xyz' }),
 }));
 
 const mockAddDomain = vi.fn();
