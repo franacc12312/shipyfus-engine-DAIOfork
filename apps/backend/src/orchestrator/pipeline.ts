@@ -10,11 +10,12 @@ import { buildPlannerPrompt } from '../agents/prompts/planner.js';
 import { buildDeveloperPrompt } from '../agents/prompts/developer.js';
 import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
 import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js';
-import { rankCandidates, purchaseDomain, configureDNSForVercel } from '@daio/brand';
+import { rankCandidates, purchaseDomain, configureDNSForVercel, verifyDomainOwnership } from '@daio/brand';
 import { ResearchService, TavilySource, ProductHuntSource, HackerNewsSource, RedditSource } from '@daio/research';
 import type { RawResearchData, ResearchContext } from '@daio/research';
 import type { BrandCandidate, PorkbunConfig } from '@daio/brand';
 import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD, Department, HitlConfig, DomainChoice } from '@daio/shared';
+import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
 
@@ -281,6 +282,13 @@ export class PipelineOrchestrator {
     }
 
     // Stage 5: Deployment (no gate after — it's the last stage)
+    // Defense-in-depth: verify branding output_context.purchased before passing domain
+    const freshBrandingCtx = await this.getBrandingOutputContext();
+    const domainForDeployment = (freshBrandingCtx?.purchased === true) ? domainName : null;
+    if (domainName && !domainForDeployment) {
+      await this.insertLog('deployment', 'Skipping domain attachment — domain purchase was not verified');
+    }
+
     const deployStage = getStatus('deployment');
     if (deployStage?.status === 'completed') {
       console.log(`Run ${this.runId}: skipping completed deployment`);
@@ -288,8 +296,14 @@ export class PipelineOrchestrator {
       throw new Error('Deployment previously failed');
     } else {
       if (this.cancelled) return;
-      const deployResult = await this.runDeployment(constraints.deployment, productDir, domainName);
-      await this.registerProduct(prd, { ...deployResult, domainName }, productDir);
+      const deployResult = await this.runDeployment(constraints.deployment, productDir, domainForDeployment);
+
+      // Attach purchased domain to Vercel project (non-fatal if it fails)
+      if (domainForDeployment && deployResult.deployUrl && env.VERCEL_TOKEN) {
+        await this.attachDomainToVercel(deployResult.deployUrl, deployResult.projectName, domainForDeployment);
+      }
+
+      await this.registerProduct(prd, { ...deployResult, domainName: domainForDeployment }, productDir);
     }
 
     // Mark run completed
@@ -494,6 +508,8 @@ export class PipelineOrchestrator {
       // Step 4: Purchase the domain via Porkbun (CFO action)
       let purchaseResult = null;
       let dnsResult = null;
+      let purchaseVerified = false;
+      let purchaseError: string | undefined;
 
       if (env.PORKBUN_API_KEY && env.PORKBUN_API_SECRET) {
         const porkbunConfig: PorkbunConfig = {
@@ -504,39 +520,60 @@ export class PipelineOrchestrator {
         purchaseResult = await purchaseDomain(winner.domain, porkbunConfig);
 
         if (purchaseResult.status === 'purchased') {
-          dnsResult = await configureDNSForVercel(winner.domain, porkbunConfig);
+          // Verify domain actually appears in our account
+          const verification = await verifyDomainOwnership(winner.domain, porkbunConfig);
+          if (verification.verified) {
+            purchaseVerified = true;
+            dnsResult = await configureDNSForVercel(winner.domain, porkbunConfig);
+            // Log DNS results
+            if (dnsResult.allSuccess) {
+              await this.insertLog('branding', `DNS configured for ${winner.domain} (A + CNAME)`);
+            } else {
+              const failed = dnsResult.records.filter((r) => !r.success).map((r) => r.type).join(', ');
+              await this.insertLog('branding', `WARNING: DNS partially configured — failed: ${failed}`);
+            }
+          } else {
+            purchaseError = verification.error ?? 'Domain not found in account after purchase';
+            await this.insertLog('branding', `Domain purchase verification failed for ${winner.domain}: ${purchaseError}`);
+          }
+        } else {
+          purchaseError = purchaseResult.error ?? 'Purchase failed';
+          await this.insertLog('branding', `Domain purchase failed for ${winner.domain}: ${purchaseError}`);
         }
       } else {
         console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
       }
 
-      // Step 5: Run CFO agent for narration/logging
-      const cfoPrompt = buildCFOPrompt(winner.domain, winner.price, winner.name);
-      const cfoAgentId = await this.resolveCFOAgent();
+      // Step 5: Run CFO agent for narration/logging (only if purchase succeeded)
+      if (purchaseVerified) {
+        const cfoPrompt = buildCFOPrompt(winner.domain, winner.price, winner.name);
+        const cfoAgentId = await this.resolveCFOAgent();
 
-      await this.runner.runOnce(cfoPrompt, {
-        runId: this.runId,
-        stage: 'branding',
-        cwd: productDir,
-        maxBudgetUsd: 1,
-        agentId: cfoAgentId,
-      });
+        await this.runner.runOnce(cfoPrompt, {
+          runId: this.runId,
+          stage: 'branding',
+          cwd: productDir,
+          maxBudgetUsd: 1,
+          agentId: cfoAgentId,
+        });
+      }
 
       // Step 6: Update PRD with the final product name
       prd.productName = winner.name;
 
       // Store branding output
-      const outputContext = {
+      const outputContext: Record<string, unknown> = {
         productName: winner.name,
         domain: winner.domain,
         tld: winner.tld,
         price: winner.price,
         strategy: winner.strategy,
         reasoning: winner.reasoning,
-        purchased: purchaseResult?.status === 'purchased',
+        purchased: purchaseVerified,
         dnsConfigured: dnsResult?.allSuccess ?? false,
         alternatives: winner.alternatives,
       };
+      if (purchaseError) outputContext.purchaseError = purchaseError;
 
       await db.from('run_stages').update({
         status: 'completed',
@@ -545,12 +582,14 @@ export class PipelineOrchestrator {
         completed_at: new Date().toISOString(),
       }).eq('run_id', this.runId).eq('stage', 'branding');
 
-      // Update run with domain name
-      await db.from('runs').update({
-        domain_name: winner.domain,
-      }).eq('id', this.runId);
+      // Only store domain_name on run if purchase was verified
+      if (purchaseVerified) {
+        await db.from('runs').update({
+          domain_name: winner.domain,
+        }).eq('id', this.runId);
+      }
 
-      return { prd, domainName: winner.domain };
+      return { prd, domainName: purchaseVerified ? winner.domain : null };
     } catch (err) {
       if (!this.cancelled) await this.updateStageStatus('branding', 'failed');
       throw err;
@@ -572,10 +611,12 @@ export class PipelineOrchestrator {
     chosen: DomainChoice,
     prd: ProductPRD,
     productDir: string,
-  ): Promise<{ prd: ProductPRD; domainName: string }> {
+  ): Promise<{ prd: ProductPRD; domainName: string | null }> {
     // Purchase domain via Porkbun
     let purchaseResult = null;
     let dnsResult = null;
+    let purchaseVerified = false;
+    let purchaseError: string | undefined;
 
     if (env.PORKBUN_API_KEY && env.PORKBUN_API_SECRET) {
       const porkbunConfig: PorkbunConfig = {
@@ -586,23 +627,41 @@ export class PipelineOrchestrator {
       purchaseResult = await purchaseDomain(chosen.domain, porkbunConfig);
 
       if (purchaseResult.status === 'purchased') {
-        dnsResult = await configureDNSForVercel(chosen.domain, porkbunConfig);
+        const verification = await verifyDomainOwnership(chosen.domain, porkbunConfig);
+        if (verification.verified) {
+          purchaseVerified = true;
+          dnsResult = await configureDNSForVercel(chosen.domain, porkbunConfig);
+          if (dnsResult.allSuccess) {
+            await this.insertLog('branding', `DNS configured for ${chosen.domain} (A + CNAME)`);
+          } else {
+            const failed = dnsResult.records.filter((r) => !r.success).map((r) => r.type).join(', ');
+            await this.insertLog('branding', `WARNING: DNS partially configured — failed: ${failed}`);
+          }
+        } else {
+          purchaseError = verification.error ?? 'Domain not found in account after purchase';
+          await this.insertLog('branding', `Domain purchase verification failed for ${chosen.domain}: ${purchaseError}`);
+        }
+      } else {
+        purchaseError = purchaseResult.error ?? 'Purchase failed';
+        await this.insertLog('branding', `Domain purchase failed for ${chosen.domain}: ${purchaseError}`);
       }
     } else {
       console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
     }
 
-    // Run CFO agent for narration
-    const cfoPrompt = buildCFOPrompt(chosen.domain, chosen.price, chosen.name);
-    const cfoAgentId = await this.resolveCFOAgent();
+    // Run CFO agent for narration (only if purchase succeeded)
+    if (purchaseVerified) {
+      const cfoPrompt = buildCFOPrompt(chosen.domain, chosen.price, chosen.name);
+      const cfoAgentId = await this.resolveCFOAgent();
 
-    await this.runner.runOnce(cfoPrompt, {
-      runId: this.runId,
-      stage: 'branding',
-      cwd: productDir,
-      maxBudgetUsd: 1,
-      agentId: cfoAgentId,
-    });
+      await this.runner.runOnce(cfoPrompt, {
+        runId: this.runId,
+        stage: 'branding',
+        cwd: productDir,
+        maxBudgetUsd: 1,
+        agentId: cfoAgentId,
+      });
+    }
 
     // Update PRD with chosen name
     prd.productName = chosen.name;
@@ -616,7 +675,7 @@ export class PipelineOrchestrator {
       .single();
 
     const existingCtx = (currentStage?.output_context as Record<string, unknown>) || {};
-    const mergedCtx = {
+    const mergedCtx: Record<string, unknown> = {
       ...existingCtx,
       productName: chosen.name,
       domain: chosen.domain,
@@ -624,20 +683,23 @@ export class PipelineOrchestrator {
       price: chosen.price,
       strategy: chosen.strategy,
       reasoning: chosen.reasoning,
-      purchased: purchaseResult?.status === 'purchased',
+      purchased: purchaseVerified,
       dnsConfigured: dnsResult?.allSuccess ?? false,
     };
+    if (purchaseError) mergedCtx.purchaseError = purchaseError;
 
     await db.from('run_stages').update({
       output_context: mergedCtx,
     }).eq('run_id', this.runId).eq('stage', 'branding');
 
-    // Update run with domain name
-    await db.from('runs').update({
-      domain_name: chosen.domain,
-    }).eq('id', this.runId);
+    // Only store domain_name on run if purchase was verified
+    if (purchaseVerified) {
+      await db.from('runs').update({
+        domain_name: chosen.domain,
+      }).eq('id', this.runId);
+    }
 
-    return { prd, domainName: chosen.domain };
+    return { prd, domainName: purchaseVerified ? chosen.domain : null };
   }
 
   private async getBrandingOutputContext(): Promise<Record<string, unknown> | null> {
@@ -713,11 +775,11 @@ export class PipelineOrchestrator {
     }
   }
 
-  private async runDeployment(config: DeploymentConfig, productDir: string, domainName?: string | null): Promise<{ deployUrl: string | null }> {
+  private async runDeployment(config: DeploymentConfig, productDir: string, domainName?: string | null): Promise<{ deployUrl: string | null; projectName: string | null }> {
     await this.updateStageStatus('deployment', 'running');
 
     try {
-      const prompt = buildDeployerPrompt(config, env.VERCEL_TOKEN, domainName ?? undefined);
+      const prompt = buildDeployerPrompt(config, env.VERCEL_TOKEN);
       const result = await this.runner.runOnce(prompt, {
         runId: this.runId,
         stage: 'deployment',
@@ -726,8 +788,9 @@ export class PipelineOrchestrator {
         agentId: this.agentMap.get('deployment'),
       });
 
-      const deployResult = result.json as { deployUrl: string | null; status: string } | null;
+      const deployResult = result.json as { deployUrl: string | null; projectName?: string | null; status: string } | null;
       const deployUrl = deployResult?.deployUrl || null;
+      const projectName = deployResult?.projectName || null;
 
       await db.from('run_stages').update({
         status: 'completed',
@@ -740,7 +803,7 @@ export class PipelineOrchestrator {
         await db.from('runs').update({ deploy_url: deployUrl }).eq('id', this.runId);
       }
 
-      return { deployUrl };
+      return { deployUrl, projectName };
     } catch (err) {
       if (!this.cancelled) await this.updateStageStatus('deployment', 'failed');
       throw err;
@@ -762,6 +825,42 @@ export class PipelineOrchestrator {
 
     if (data) {
       await db.from('runs').update({ product_id: data.id }).eq('id', this.runId);
+    }
+  }
+
+  private async attachDomainToVercel(deployUrl: string, projectName: string | null, domain: string): Promise<void> {
+    try {
+      // Determine project name: prefer explicit, fall back to URL parsing
+      let resolvedProject = projectName;
+      if (!resolvedProject) {
+        resolvedProject = parseProjectNameFromUrl(deployUrl);
+        if (resolvedProject) {
+          await this.insertLog('deployment', `No projectName from deployer, falling back to parsed name: ${resolvedProject}`);
+        }
+      }
+
+      if (!resolvedProject) {
+        await this.insertLog('deployment', `Skipping domain attachment — could not determine Vercel project name from deploy URL`);
+        return;
+      }
+
+      await this.insertLog('deployment', `Attaching domain ${domain} to Vercel project ${resolvedProject}`);
+
+      const addResult = await addDomainToProject(resolvedProject, domain, env.VERCEL_TOKEN);
+      if (!addResult.success) {
+        await this.insertLog('deployment', `Failed to add domain ${domain} to Vercel: ${addResult.error}`);
+        return;
+      }
+
+      // Check verification status
+      const configResult = await getDomainConfig(resolvedProject, domain, env.VERCEL_TOKEN);
+      if (configResult.success && configResult.verified) {
+        await this.insertLog('deployment', `Domain ${domain} attached and verified on Vercel`);
+      } else {
+        await this.insertLog('deployment', `Domain ${domain} attached — DNS verification pending`);
+      }
+    } catch (err) {
+      await this.insertLog('deployment', `Domain attachment error: ${(err as Error).message}`);
     }
   }
 

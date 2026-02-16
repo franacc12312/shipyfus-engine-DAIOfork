@@ -112,19 +112,24 @@ describe('buildDeployerPrompt', () => {
     expect(buildDeployerPrompt(config, 'tok').length).toBeGreaterThan(0);
   });
 
-  it('includes custom domain section when domain provided', () => {
-    const config: DeploymentConfig = { provider: 'vercel', auto_deploy: true };
-    const prompt = buildDeployerPrompt(config, 'tok', 'cool.xyz');
-    expect(prompt).toContain('cool.xyz');
-    expect(prompt).toContain('vercel domains add');
-    expect(prompt).toContain('customDomain');
-  });
-
-  it('omits custom domain section when no domain', () => {
+  it('includes projectName in output format', () => {
     const config: DeploymentConfig = { provider: 'vercel', auto_deploy: true };
     const prompt = buildDeployerPrompt(config, 'tok');
+    expect(prompt).toContain('projectName');
+  });
+
+  it('does not contain domain CLI commands (handled programmatically)', () => {
+    const config: DeploymentConfig = { provider: 'vercel', auto_deploy: true };
+    const prompt = buildDeployerPrompt(config, 'tok');
+    expect(prompt).not.toContain('vercel domains add');
     expect(prompt).not.toContain('Custom Domain');
     expect(prompt).not.toContain('customDomain');
+  });
+
+  it('only accepts config and token parameters', () => {
+    const config: DeploymentConfig = { provider: 'vercel', auto_deploy: true };
+    // buildDeployerPrompt now takes exactly 2 params (no domainName)
+    expect(buildDeployerPrompt.length).toBe(2);
   });
 });
 

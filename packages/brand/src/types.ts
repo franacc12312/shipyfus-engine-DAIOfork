@@ -51,6 +51,13 @@ export interface DNSConfigResult {
   allSuccess: boolean;
 }
 
+export interface DomainVerificationResult {
+  verified: boolean;
+  domain: string;
+  status?: string;
+  error?: string;
+}
+
 /** Minimal product info needed for TLD selection */
 export interface ProductInfo {
   productDescription: string;

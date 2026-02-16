@@ -6,7 +6,8 @@ import { useAgents } from '../hooks/useAgents';
 import { StageIndicator } from '../components/StageIndicator';
 import { LogStream } from '../components/LogStream';
 import { ChatStream } from '../components/ChatStream';
-import { ViewToggle } from '../components/ViewToggle';
+import { ViewToggle, type ViewMode } from '../components/ViewToggle';
+import { DocumentViewer } from '../components/DocumentViewer';
 import { AdminGate } from '../components/AdminGate';
 import { ApprovalGate } from '../components/ApprovalGate';
 import { api } from '../lib/api';
@@ -20,7 +21,7 @@ export function RunDetail() {
   const { logs, loading: logsLoading } = useRealtimeLogs(id);
   const { agentsByStage, agentsById } = useAgents();
   const [activeTab, setActiveTab] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'chat' | 'terminal'>('chat');
+  const [viewMode, setViewMode] = useState<ViewMode>('chat');
   const [cancelling, setCancelling] = useState(false);
   const [retrying, setRetrying] = useState(false);
 
@@ -173,8 +174,23 @@ export function RunDetail() {
                 >
                   {run.domain_name}
                 </a>
+                <span className="ml-1 text-[9px] text-terminal-green font-bold">PURCHASED</span>
               </div>
             )}
+            {(() => {
+              const brandingStage = run.run_stages?.find((s) => s.stage === 'branding');
+              const ctx = brandingStage?.output_context as Record<string, unknown> | undefined;
+              if (ctx?.purchased === false && ctx?.purchaseError) {
+                return (
+                  <div>
+                    <div className="text-[9px] text-zinc-600 uppercase tracking-wider">Domain</div>
+                    <div className="text-xs text-terminal-red font-bold">PURCHASE FAILED</div>
+                    <div className="text-[10px] text-zinc-500 mt-0.5">{String(ctx.purchaseError)}</div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
             {run.deploy_url && (
               <div>
                 <div className="text-[9px] text-zinc-600 uppercase tracking-wider">Deploy URL</div>
@@ -220,7 +236,9 @@ export function RunDetail() {
             <ViewToggle mode={viewMode} onChange={setViewMode} />
           </div>
 
-          {logsLoading ? (
+          {viewMode === 'docs' ? (
+            <DocumentViewer runId={id!} isRunning={isRunning} />
+          ) : logsLoading ? (
             <div className="text-zinc-500 text-sm p-4">Loading logs...</div>
           ) : viewMode === 'chat' ? (
             <ChatStream
