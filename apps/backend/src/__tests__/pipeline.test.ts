@@ -16,7 +16,7 @@ vi.mock('../services/db.js', () => {
   const chainable = {
     eq: vi.fn().mockReturnThis(),
     in: vi.fn().mockReturnThis(),
-    single: vi.fn().mockResolvedValue({ data: { status: 'completed' }, error: null }),
+    single: vi.fn().mockResolvedValue({ data: { status: 'completed', output_context: { purchased: true } }, error: null }),
     select: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockResolvedValue({ data: [{ id: 'cfo-agent-id' }] }),
@@ -99,6 +99,11 @@ vi.mock('@daio/brand', () => ({
     price: 2,
     registrar: 'porkbun',
   }),
+  verifyDomainOwnership: vi.fn().mockResolvedValue({
+    verified: true,
+    domain: 'testbrand.xyz',
+    status: 'ACTIVE',
+  }),
   configureDNSForVercel: vi.fn().mockResolvedValue({
     domain: 'testbrand.xyz',
     records: [
@@ -130,7 +135,7 @@ vi.mock('node:fs', () => ({
 }));
 
 import { PipelineOrchestrator } from '../orchestrator/pipeline.js';
-import { purchaseDomain, rankCandidates, configureDNSForVercel } from '@daio/brand';
+import { purchaseDomain, rankCandidates, configureDNSForVercel, verifyDomainOwnership } from '@daio/brand';
 
 function setupDefaultMocks() {
   // Default mock: ideation returns PRD
@@ -337,6 +342,9 @@ describe('PipelineOrchestrator — HITL branding', () => {
     ]);
     vi.mocked(purchaseDomain).mockReset().mockResolvedValue({
       domain: 'testbrand.xyz', status: 'purchased', price: 2, registrar: 'porkbun',
+    });
+    vi.mocked(verifyDomainOwnership).mockReset().mockResolvedValue({
+      verified: true, domain: 'testbrand.xyz', status: 'ACTIVE',
     });
     vi.mocked(configureDNSForVercel).mockReset().mockResolvedValue({
       domain: 'testbrand.xyz',
@@ -722,5 +730,179 @@ describe('PipelineOrchestrator — HITL branding', () => {
       (op) => op.table === 'runs' && op.op === 'update' && op.data.domain_name === 'testbrand.xyz'
     );
     expect(domainUpdate).toBeDefined();
+  });
+});
+
+describe('PipelineOrchestrator — purchase failure handling', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockRunOnce.mockReset();
+    mockRunLoop.mockReset();
+    dbOps.length = 0;
+    mockHitlConfig = {
+      enabled: false,
+      gate_after_ideation: false,
+      gate_after_branding: false,
+      gate_after_planning: false,
+      gate_after_development: false,
+    };
+
+    vi.mocked(rankCandidates).mockReset().mockResolvedValue([
+      { rank: 1, name: 'TestBrand', domain: 'testbrand.xyz', tld: 'xyz', strategy: 'invented', price: 2, reasoning: 'Great name', score: 85, alternatives: [] },
+    ]);
+  });
+
+  function setupMocksForBrandingTest() {
+    mockRunOnce
+      // Ideation
+      .mockResolvedValueOnce({
+        text: 'ideation result',
+        json: {
+          productName: 'TestProduct', workingTitle: 'TestProduct',
+          productDescription: 'A test product', targetUser: 'devs',
+          problemStatement: 'testing', coreFunctionality: ['f1'],
+          technicalRequirements: 'ts',
+          suggestedTechStack: { framework: 'React', language: 'TypeScript', keyDependencies: [] },
+          mvpScope: 'basic', successCriteria: ['works'], uniqueValue: 'unique',
+        },
+        cost: 0.1,
+      })
+      // Branding Prism
+      .mockResolvedValueOnce({
+        text: 'brand candidates',
+        json: [{ name: 'TestBrand', strategy: 'invented', reasoning: 'Great name' }],
+        cost: 0.05,
+      })
+      // CFO (only called if purchase succeeds)
+      .mockResolvedValueOnce({ text: 'cfo narration', json: {}, cost: 0.01 })
+      // Planning
+      .mockResolvedValueOnce({ text: 'plan', json: { planFilePath: 'thoughts/PLAN.md' }, cost: 0.05 })
+      // Deployment
+      .mockResolvedValueOnce({ text: 'deployed', json: { deployUrl: 'https://test.vercel.app', status: 'deployed' }, cost: 0.02 });
+
+    mockRunLoop.mockResolvedValue({ text: 'dev', json: null, cost: 1.5, iterations: 3, completed: true });
+  }
+
+  it('does not store domain_name when purchase fails', async () => {
+    vi.mocked(purchaseDomain).mockReset().mockResolvedValue({
+      domain: 'testbrand.xyz', status: 'failed', price: 0, registrar: 'porkbun', error: 'Cost must be a valid integer.',
+    });
+    vi.mocked(verifyDomainOwnership).mockReset();
+    vi.mocked(configureDNSForVercel).mockReset();
+
+    setupMocksForBrandingTest();
+
+    const orch = new PipelineOrchestrator('run-purchase-fail');
+    await orch.execute();
+
+    // domain_name should NOT be set on run
+    const domainUpdate = dbOps.find(
+      (op) => op.table === 'runs' && op.op === 'update' && op.data.domain_name
+    );
+    expect(domainUpdate).toBeUndefined();
+
+    // verifyDomainOwnership should NOT have been called
+    expect(verifyDomainOwnership).not.toHaveBeenCalled();
+    // configureDNSForVercel should NOT have been called
+    expect(configureDNSForVercel).not.toHaveBeenCalled();
+  });
+
+  it('does not store domain_name when verification fails', async () => {
+    vi.mocked(purchaseDomain).mockReset().mockResolvedValue({
+      domain: 'testbrand.xyz', status: 'purchased', price: 2, registrar: 'porkbun',
+    });
+    vi.mocked(verifyDomainOwnership).mockReset().mockResolvedValue({
+      verified: false, domain: 'testbrand.xyz', error: 'Domain not found in account after purchase',
+    });
+    vi.mocked(configureDNSForVercel).mockReset();
+
+    setupMocksForBrandingTest();
+
+    const orch = new PipelineOrchestrator('run-verify-fail');
+    await orch.execute();
+
+    // domain_name should NOT be set on run
+    const domainUpdate = dbOps.find(
+      (op) => op.table === 'runs' && op.op === 'update' && op.data.domain_name
+    );
+    expect(domainUpdate).toBeUndefined();
+
+    // configureDNSForVercel should NOT have been called
+    expect(configureDNSForVercel).not.toHaveBeenCalled();
+  });
+
+  it('logs purchase failure to dashboard', async () => {
+    vi.mocked(purchaseDomain).mockReset().mockResolvedValue({
+      domain: 'testbrand.xyz', status: 'failed', price: 0, registrar: 'porkbun', error: 'Insufficient funds',
+    });
+    vi.mocked(verifyDomainOwnership).mockReset();
+    vi.mocked(configureDNSForVercel).mockReset();
+
+    setupMocksForBrandingTest();
+
+    const orch = new PipelineOrchestrator('run-log-fail');
+    await orch.execute();
+
+    // Should have inserted a log about purchase failure
+    const logInsert = dbOps.find(
+      (op) => op.table === 'logs' && op.op === 'insert' && op.data.content?.includes('purchase failed')
+    );
+    expect(logInsert).toBeDefined();
+    expect(logInsert!.data.content).toContain('Insufficient funds');
+  });
+
+  it('verifies domain ownership after purchase succeeds', async () => {
+    vi.mocked(purchaseDomain).mockReset().mockResolvedValue({
+      domain: 'testbrand.xyz', status: 'purchased', price: 2, registrar: 'porkbun',
+    });
+    vi.mocked(verifyDomainOwnership).mockReset().mockResolvedValue({
+      verified: true, domain: 'testbrand.xyz', status: 'ACTIVE',
+    });
+    vi.mocked(configureDNSForVercel).mockReset().mockResolvedValue({
+      domain: 'testbrand.xyz',
+      records: [
+        { type: 'A', name: '@', content: '76.76.21.21', success: true },
+        { type: 'CNAME', name: 'www', content: 'cname.vercel-dns.com', success: true },
+      ],
+      allSuccess: true,
+    });
+
+    setupMocksForBrandingTest();
+
+    const orch = new PipelineOrchestrator('run-verify-ok');
+    await orch.execute();
+
+    // verifyDomainOwnership should have been called
+    expect(verifyDomainOwnership).toHaveBeenCalledWith('testbrand.xyz', {
+      apiKey: 'pk1_test',
+      apiSecret: 'sk1_test',
+    });
+
+    // domain_name SHOULD be set
+    const domainUpdate = dbOps.find(
+      (op) => op.table === 'runs' && op.op === 'update' && op.data.domain_name === 'testbrand.xyz'
+    );
+    expect(domainUpdate).toBeDefined();
+  });
+
+  it('stores purchaseError in output_context when purchase fails', async () => {
+    vi.mocked(purchaseDomain).mockReset().mockResolvedValue({
+      domain: 'testbrand.xyz', status: 'failed', price: 0, registrar: 'porkbun', error: 'Cost must be a valid integer.',
+    });
+    vi.mocked(verifyDomainOwnership).mockReset();
+    vi.mocked(configureDNSForVercel).mockReset();
+
+    setupMocksForBrandingTest();
+
+    const orch = new PipelineOrchestrator('run-ctx-error');
+    await orch.execute();
+
+    // Find branding stage update with output_context
+    const brandingUpdate = dbOps.find(
+      (op) => op.table === 'run_stages' && op.op === 'update' && op.data.output_context?.purchaseError
+    );
+    expect(brandingUpdate).toBeDefined();
+    expect(brandingUpdate!.data.output_context.purchased).toBe(false);
+    expect(brandingUpdate!.data.output_context.purchaseError).toContain('Cost must be a valid integer.');
   });
 });
