@@ -34,6 +34,7 @@ const envSchema = z.object({
   VERCEL_TOKEN: z.string().default(''),
   PORKBUN_API_KEY: z.string().default(''),
   PORKBUN_API_SECRET: z.string().default(''),
+  TAVILY_API_KEY: z.string().default(''),
 });
 
 export const env = envSchema.parse(process.env);

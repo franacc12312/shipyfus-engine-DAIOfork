@@ -1,43 +1,47 @@
 import { useState } from 'react';
 import { AdminGate } from './AdminGate';
-import { ResearchBriefViewer } from './ResearchBriefViewer';
-import { DomainPicker } from './DomainPicker';
 import { approveStage, rejectStage } from '../lib/hitl';
 import type { RunStage } from '@daio/shared';
 
-const STAGE_LABELS: Record<string, string> = {
-  research: 'Research',
-  ideation: 'Ideation',
-  branding: 'Branding',
-  planning: 'Planning',
-  development: 'Development',
-};
-
-interface ApprovalGateProps {
+interface ResearchBriefViewerProps {
   runId: string;
   stage: RunStage;
 }
 
-export function ApprovalGate({ runId, stage }: ApprovalGateProps) {
-  // Route research stage to the dedicated brief viewer
-  if (stage.stage === 'research') {
-    return <ResearchBriefViewer runId={runId} stage={stage} />;
-  }
+function parseMarkdownSections(markdown: string): { heading: string; items: string[] }[] {
+  const sections: { heading: string; items: string[] }[] = [];
+  const lines = markdown.split('\n');
+  let current: { heading: string; items: string[] } | null = null;
 
+  for (const line of lines) {
+    if (line.startsWith('## ')) {
+      if (current) sections.push(current);
+      current = { heading: line.replace('## ', ''), items: [] };
+    } else if (current) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('- ')) {
+        current.items.push(trimmed.slice(2));
+      } else if (trimmed.length > 0) {
+        current.items.push(trimmed);
+      }
+    }
+  }
+  if (current) sections.push(current);
+  return sections;
+}
+
+export function ResearchBriefViewer({ runId, stage }: ResearchBriefViewerProps) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  // Delegate to DomainPicker for branding stage with candidates
-  const ctx = stage.output_context as Record<string, unknown> | null;
-  if (stage.stage === 'branding' && ctx?.candidates) {
-    return <DomainPicker runId={runId} stage={stage} />;
-  }
+  const ctx = stage.output_context as { markdown?: string } | null;
+  const markdown = ctx?.markdown ?? '';
 
   async function handleApprove() {
     setApproving(true);
     try {
-      await approveStage(runId, stage.stage);
+      await approveStage(runId, 'research');
     } catch (err) {
       console.error('Failed to approve:', err);
     }
@@ -47,7 +51,7 @@ export function ApprovalGate({ runId, stage }: ApprovalGateProps) {
   async function handleRetry() {
     setRejecting(true);
     try {
-      await rejectStage(runId, stage.stage, 'retry');
+      await rejectStage(runId, 'research', 'retry');
     } catch (err) {
       console.error('Failed to retry:', err);
     }
@@ -57,7 +61,7 @@ export function ApprovalGate({ runId, stage }: ApprovalGateProps) {
   async function handleCancel() {
     setRejecting(true);
     try {
-      await rejectStage(runId, stage.stage, 'cancel');
+      await rejectStage(runId, 'research', 'cancel');
     } catch (err) {
       console.error('Failed to cancel:', err);
     }
@@ -65,34 +69,47 @@ export function ApprovalGate({ runId, stage }: ApprovalGateProps) {
     setShowConfirm(false);
   }
 
+  if (!markdown) {
+    return (
+      <div className="bg-terminal-cyan/5 border border-terminal-cyan/30 rounded-lg p-4 mb-4">
+        <p className="text-xs text-zinc-400">No research brief available.</p>
+      </div>
+    );
+  }
+
+  const sections = parseMarkdownSections(markdown);
+
   return (
-    <div className="bg-terminal-amber/5 border border-terminal-amber/30 rounded-lg p-4 mb-4 animate-pulse-slow">
+    <div className="bg-terminal-cyan/5 border border-terminal-cyan/30 rounded-lg p-4 mb-4 animate-pulse-slow">
       <div className="flex items-center gap-2 mb-3">
-        <div className="w-2 h-2 rounded-full bg-terminal-amber animate-pulse" />
-        <span className="text-sm font-bold text-terminal-amber tracking-wider uppercase">
-          Approval Required
+        <div className="w-2 h-2 rounded-full bg-terminal-cyan animate-pulse" />
+        <span className="text-sm font-bold text-terminal-cyan tracking-wider uppercase">
+          Review Research Brief
         </span>
       </div>
 
-      <p className="text-xs text-zinc-300 mb-1">
-        <span className="text-zinc-500">Stage:</span>{' '}
-        <span className="text-terminal-amber">{STAGE_LABELS[stage.stage] || stage.stage}</span>{' '}
-        has completed and is awaiting your review.
-      </p>
+      <div className="bg-zinc-950/50 rounded p-3 mb-3 max-h-80 overflow-auto space-y-3">
+        {sections.map((section) => (
+          <div key={section.heading}>
+            <h3 className="text-xs font-bold text-terminal-cyan/80 uppercase tracking-wider mb-1">
+              {section.heading}
+            </h3>
+            {section.items.length === 1 && !section.items[0].startsWith('-') ? (
+              <p className="text-xs text-zinc-300 leading-relaxed">{section.items[0]}</p>
+            ) : (
+              <ul className="space-y-0.5">
+                {section.items.map((item, i) => (
+                  <li key={i} className="text-xs text-zinc-300 leading-relaxed pl-3 relative before:content-['•'] before:absolute before:left-0 before:text-terminal-cyan/50">
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+      </div>
 
-      {stage.output_context && (
-        <div className="bg-zinc-950/50 rounded p-2 mt-2 mb-3 text-[10px] text-zinc-400 max-h-24 overflow-auto">
-          {typeof stage.output_context === 'object' && 'productName' in stage.output_context ? (
-            <span>Product: <span className="text-zinc-200">{String((stage.output_context as Record<string, unknown>).productName)}</span></span>
-          ) : typeof stage.output_context === 'object' && 'completed' in stage.output_context ? (
-            <span>Completed: <span className="text-zinc-200">{String((stage.output_context as Record<string, unknown>).completed)}</span>, Iterations: <span className="text-zinc-200">{String((stage.output_context as Record<string, unknown>).iterations)}</span></span>
-          ) : (
-            <span className="text-zinc-500">Output available</span>
-          )}
-        </div>
-      )}
-
-      <div className="flex gap-2 mt-3">
+      <div className="flex gap-2">
         <AdminGate>
           <button
             onClick={handleApprove}
@@ -107,7 +124,7 @@ export function ApprovalGate({ runId, stage }: ApprovalGateProps) {
             disabled={approving || rejecting}
             className="text-terminal-amber border border-terminal-amber/30 rounded px-3 py-1.5 text-xs tracking-wider hover:bg-terminal-amber/10 transition disabled:opacity-50"
           >
-            {rejecting ? 'RETRYING...' : 'RETRY STAGE'}
+            {rejecting ? 'RETRYING...' : 'RE-RUN RESEARCH'}
           </button>
 
           {showConfirm ? (

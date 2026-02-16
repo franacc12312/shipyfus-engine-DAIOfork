@@ -7,11 +7,12 @@ export interface StageDefinition {
 }
 
 export const STAGE_DEFINITIONS: Record<string, StageDefinition> = {
-  ideation: { name: 'ideation', mode: 'oneshot', order: 0 },
-  branding: { name: 'branding', mode: 'oneshot', order: 1 },
-  planning: { name: 'planning', mode: 'oneshot', order: 2 },
-  development: { name: 'development', mode: 'loop', order: 3 },
-  deployment: { name: 'deployment', mode: 'oneshot', order: 4 },
+  research: { name: 'research', mode: 'oneshot', order: 0 },
+  ideation: { name: 'ideation', mode: 'oneshot', order: 1 },
+  branding: { name: 'branding', mode: 'oneshot', order: 2 },
+  planning: { name: 'planning', mode: 'oneshot', order: 3 },
+  development: { name: 'development', mode: 'loop', order: 4 },
+  deployment: { name: 'deployment', mode: 'oneshot', order: 5 },
 };
 
-export const STAGE_ORDER = ['ideation', 'branding', 'planning', 'development', 'deployment'] as const;
+export const STAGE_ORDER = ['research', 'ideation', 'branding', 'planning', 'development', 'deployment'] as const;

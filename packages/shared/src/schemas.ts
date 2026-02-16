@@ -1,5 +1,13 @@
 import { z } from 'zod';
 
+export const researchConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  topics: z.array(z.string()).optional(),
+  max_searches: z.number().int().min(1).max(20).optional(),
+  sources: z.array(z.string()).optional(),
+  custom_rules: z.array(z.string()).optional(),
+});
+
 export const ideationConfigSchema = z.object({
   platform: z.enum(['web', 'cli', 'api', 'library']).optional(),
   audience: z.enum(['consumer', 'developer', 'business']).optional(),
@@ -36,6 +44,7 @@ export const deploymentConfigSchema = z.object({
 });
 
 export const constraintConfigSchemas = {
+  research: researchConfigSchema,
   ideation: ideationConfigSchema,
   branding: brandingConfigSchema,
   planning: planningConfigSchema,
@@ -43,7 +52,7 @@ export const constraintConfigSchemas = {
   deployment: deploymentConfigSchema,
 } as const;
 
-export const departmentSchema = z.enum(['ideation', 'branding', 'planning', 'development', 'deployment']);
+export const departmentSchema = z.enum(['research', 'ideation', 'branding', 'planning', 'development', 'deployment']);
 
 export const updateConstraintSchema = z.object({
   config: z.record(z.unknown()),
@@ -94,6 +103,7 @@ export const stageStatusSchema = z.enum(['pending', 'running', 'completed', 'fai
 
 export const hitlConfigSchema = z.object({
   enabled: z.boolean(),
+  gate_after_research: z.boolean(),
   gate_after_ideation: z.boolean(),
   gate_after_branding: z.boolean(),
   gate_after_planning: z.boolean(),
@@ -102,6 +112,7 @@ export const hitlConfigSchema = z.object({
 
 export const updateHitlConfigSchema = z.object({
   enabled: z.boolean().optional(),
+  gate_after_research: z.boolean().optional(),
   gate_after_ideation: z.boolean().optional(),
   gate_after_branding: z.boolean().optional(),
   gate_after_planning: z.boolean().optional(),

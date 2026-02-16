@@ -1,6 +1,6 @@
 import type { Department, RunStatus, StageStatus } from './types.js';
 
-export const STAGES: readonly Department[] = ['ideation', 'branding', 'planning', 'development', 'deployment'] as const;
+export const STAGES: readonly Department[] = ['research', 'ideation', 'branding', 'planning', 'development', 'deployment'] as const;
 
 export const RUN_STATUSES: readonly RunStatus[] = ['queued', 'running', 'completed', 'failed', 'cancelled'] as const;
 
@@ -21,6 +21,7 @@ export const DEFAULT_MAX_ITERATIONS = 20;
 export const DEFAULT_MAX_BUDGET_USD = 10;
 
 export const AGENT_SLUGS = {
+  RESEARCHER: 'researcher',
   IDEATOR: 'ideator',
   BRANDER: 'brander',
   CFO: 'cfo',
@@ -30,6 +31,7 @@ export const AGENT_SLUGS = {
 } as const;
 
 export const STAGE_AGENT_MAP: Record<Department, string> = {
+  research: 'researcher',
   ideation: 'ideator',
   branding: 'brander',
   planning: 'planner',

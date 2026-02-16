@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { buildIdeatorPrompt } from '../agents/prompts/ideator.js';
+import { buildResearcherPrompt } from '../agents/prompts/researcher.js';
 import { buildPlannerPrompt } from '../agents/prompts/planner.js';
 import { buildDeveloperPrompt } from '../agents/prompts/developer.js';
 import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
 import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js';
-import type { IdeationConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD } from '@daio/shared';
+import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD } from '@daio/shared';
+import type { RawResearchData } from '@daio/research';
 
 const mockPRD: ProductPRD = {
   productName: 'TestApp',
@@ -184,5 +186,87 @@ describe('buildIdeatorPrompt (updated)', () => {
     const prompt = buildIdeatorPrompt(config);
     expect(prompt).toContain('workingTitle');
     expect(prompt).toContain('brand specialist');
+  });
+
+  it('includes research markdown when provided', () => {
+    const config: IdeationConfig = { platform: 'web', audience: 'consumer', complexity: 'simple' };
+    const markdown = `## Summary
+Strong demand for privacy-first dev tools.
+
+## Market Trends
+- AI tools growing 40% YoY
+
+## Competitor Landscape
+- Competitor X lacks offline mode
+
+## Pain Points
+- Users frustrated with slow load times
+
+## Opportunities
+- Gap in privacy-first tools`;
+    const prompt = buildIdeatorPrompt(config, markdown);
+    expect(prompt).toContain('Market Research (from Scout)');
+    expect(prompt).toContain('AI tools growing 40% YoY');
+    expect(prompt).toContain('Competitor X lacks offline mode');
+    expect(prompt).toContain('Users frustrated with slow load times');
+    expect(prompt).toContain('Gap in privacy-first tools');
+    expect(prompt).toContain('Strong demand for privacy-first dev tools');
+  });
+
+  it('omits research section when no markdown provided', () => {
+    const config: IdeationConfig = { platform: 'web', audience: 'consumer', complexity: 'simple' };
+    const prompt = buildIdeatorPrompt(config);
+    expect(prompt).not.toContain('Market Research');
+    expect(prompt).not.toContain('Scout');
+  });
+});
+
+describe('buildResearcherPrompt', () => {
+  const mockRawData: RawResearchData = {
+    signals: [
+      { source: 'tavily', type: 'trend', title: 'AI growing', summary: 'AI is booming', relevance: 0.9 },
+      { source: 'producthunt', type: 'launch', title: 'New tool', summary: 'Launched today', url: 'https://ph.com/1', relevance: 0.7 },
+    ],
+    sourcesUsed: ['tavily', 'producthunt'],
+    totalSignals: 2,
+    sourceResults: [
+      { name: 'tavily', signals: [{ source: 'tavily', type: 'trend', title: 'AI growing', summary: 'AI is booming', relevance: 0.9 }], count: 1 },
+      { name: 'producthunt', signals: [{ source: 'producthunt', type: 'launch', title: 'New tool', summary: 'Launched today', url: 'https://ph.com/1', relevance: 0.7 }], count: 1 },
+    ],
+  };
+
+  it('includes raw signal data', () => {
+    const config: ResearchConfig = { enabled: true };
+    const prompt = buildResearcherPrompt(mockRawData, config);
+    expect(prompt).toContain('AI growing');
+    expect(prompt).toContain('New tool');
+    expect(prompt).toContain('tavily, producthunt');
+  });
+
+  it('asks for markdown output, not JSON', () => {
+    const config: ResearchConfig = { enabled: true };
+    const prompt = buildResearcherPrompt(mockRawData, config);
+    expect(prompt).toContain('markdown document');
+    expect(prompt).toContain('## Summary');
+    expect(prompt).toContain('## Market Trends');
+    expect(prompt).not.toContain('```json');
+  });
+
+  it('includes topics when provided', () => {
+    const config: ResearchConfig = { enabled: true, topics: ['AI tools', 'productivity'] };
+    const prompt = buildResearcherPrompt(mockRawData, config);
+    expect(prompt).toContain('AI tools, productivity');
+  });
+
+  it('includes custom rules when provided', () => {
+    const config: ResearchConfig = { enabled: true, custom_rules: ['Focus on B2B', 'Ignore consumer'] };
+    const prompt = buildResearcherPrompt(mockRawData, config);
+    expect(prompt).toContain('Focus on B2B');
+    expect(prompt).toContain('Ignore consumer');
+  });
+
+  it('returns non-empty string', () => {
+    const config: ResearchConfig = { enabled: true };
+    expect(buildResearcherPrompt(mockRawData, config).length).toBeGreaterThan(0);
   });
 });

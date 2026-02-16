@@ -6,6 +6,7 @@ const dbOps: { table: string; op: string; data?: any }[] = [];
 // Dynamic HITL config — tests can override this
 let mockHitlConfig: Record<string, unknown> = {
   enabled: false,
+  gate_after_research: true,
   gate_after_ideation: true,
   gate_after_branding: true,
   gate_after_planning: true,
@@ -40,6 +41,7 @@ vi.mock('../services/db.js', () => {
               ...chainable,
               then: (resolve: any) => resolve({
                 data: [
+                  { department: 'research', config: { enabled: false } },
                   { department: 'ideation', config: { platform: 'web', audience: 'consumer', complexity: 'simple' } },
                   { department: 'branding', config: { max_domain_price: 15, preferred_tlds: ['xyz'] } },
                   { department: 'planning', config: { max_phases: 5, require_tests: true, max_files_per_phase: 10 } },
@@ -75,6 +77,7 @@ vi.mock('../env.js', () => ({
     OWNER_USER_ID: '00000000-0000-0000-0000-000000000001',
     PORKBUN_API_KEY: 'pk1_test',
     PORKBUN_API_SECRET: 'sk1_test',
+    TAVILY_API_KEY: '', // Empty = research skipped
   },
 }));
 
@@ -112,6 +115,23 @@ vi.mock('@daio/brand', () => ({
     ],
     allSuccess: true,
   }),
+}));
+
+// Mock @daio/research
+vi.mock('@daio/research', () => ({
+  ResearchService: vi.fn().mockImplementation(() => ({
+    addSource: vi.fn(),
+    gather: vi.fn().mockResolvedValue({
+      signals: [],
+      sourcesUsed: [],
+      totalSignals: 0,
+      sourceResults: [],
+    }),
+  })),
+  TavilySource: vi.fn(),
+  ProductHuntSource: vi.fn(),
+  HackerNewsSource: vi.fn(),
+  RedditSource: vi.fn(),
 }));
 
 // Mock AgentRunner
@@ -208,14 +228,25 @@ describe('PipelineOrchestrator', () => {
     setupDefaultMocks();
   });
 
-  it('creates run_stages for all 5 stages', async () => {
+  it('creates run_stages for all 6 stages', async () => {
     const orch = new PipelineOrchestrator('run-1');
     await orch.execute();
 
     const stageInserts = dbOps.filter((op) => op.table === 'run_stages' && op.op === 'insert');
-    expect(stageInserts).toHaveLength(5);
+    expect(stageInserts).toHaveLength(6);
     const stages = stageInserts.map((op) => op.data.stage);
-    expect(stages).toEqual(['ideation', 'branding', 'planning', 'development', 'deployment']);
+    expect(stages).toEqual(['research', 'ideation', 'branding', 'planning', 'development', 'deployment']);
+  });
+
+  it('skips research when disabled (no TAVILY_API_KEY)', async () => {
+    const orch = new PipelineOrchestrator('run-1');
+    await orch.execute();
+
+    // Research should be marked as skipped
+    const researchSkip = dbOps.find(
+      (op) => op.table === 'run_stages' && op.op === 'update' && op.data.status === 'skipped'
+    );
+    expect(researchSkip).toBeDefined();
   });
 
   it('updates run status to running then completed', async () => {
@@ -241,11 +272,12 @@ describe('PipelineOrchestrator', () => {
     expect(failUpdate!.data.error).toContain('Ideation failed');
   });
 
-  it('calls runOnce for ideation, branding (x2), planning, deployment', async () => {
+  it('calls runOnce for ideation, branding (x2), planning, deployment (research skipped)', async () => {
     const orch = new PipelineOrchestrator('run-1');
     await orch.execute();
 
-    expect(mockRunOnce).toHaveBeenCalledTimes(5); // ideation, branding prism, branding cfo, planning, deployment
+    // Research is skipped (no API key), so 5 runOnce calls: ideation, branding prism, branding cfo, planning, deployment
+    expect(mockRunOnce).toHaveBeenCalledTimes(5);
   });
 
   it('calls runLoop for development', async () => {

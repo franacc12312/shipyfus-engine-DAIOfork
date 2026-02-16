@@ -5,13 +5,16 @@ import { env } from '../env.js';
 import { AgentRunner } from '../agents/runner.js';
 import { STAGE_ORDER } from './stages.js';
 import { buildIdeatorPrompt } from '../agents/prompts/ideator.js';
+import { buildResearcherPrompt } from '../agents/prompts/researcher.js';
 import { buildPlannerPrompt } from '../agents/prompts/planner.js';
 import { buildDeveloperPrompt } from '../agents/prompts/developer.js';
 import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
 import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js';
 import { rankCandidates, purchaseDomain, configureDNSForVercel, verifyDomainOwnership } from '@daio/brand';
+import { ResearchService, TavilySource, ProductHuntSource, HackerNewsSource, RedditSource } from '@daio/research';
+import type { RawResearchData, ResearchContext } from '@daio/research';
 import type { BrandCandidate, PorkbunConfig } from '@daio/brand';
-import type { IdeationConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD, Department, HitlConfig, DomainChoice } from '@daio/shared';
+import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD, Department, HitlConfig, DomainChoice } from '@daio/shared';
 import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
@@ -160,6 +163,27 @@ export class PipelineOrchestrator {
     const getStatus = (stage: string) =>
       (stageMap.get(stage) as { status: string; output_context: unknown } | undefined);
 
+    // Stage 0: Research (optional — skipped if disabled or no API key)
+    let researchMarkdown: string | null = null;
+    const researchStage = getStatus('research');
+    if (researchStage?.status === 'completed' && researchStage.output_context) {
+      console.log(`Run ${this.runId}: skipping completed research`);
+      researchMarkdown = (researchStage.output_context as { markdown?: string }).markdown ?? null;
+    } else if (researchStage?.status === 'skipped') {
+      console.log(`Run ${this.runId}: research was skipped`);
+    } else if (researchStage?.status === 'awaiting_approval') {
+      researchMarkdown = (researchStage.output_context as { markdown?: string })?.markdown ?? null;
+      await this.checkApprovalGate('research');
+    } else if (researchStage?.status === 'failed') {
+      throw new Error('Research previously failed');
+    } else {
+      if (this.cancelled) return;
+      researchMarkdown = await this.runResearch(constraints.research, constraints.ideation, productDir);
+      if (researchMarkdown) {
+        await this.checkApprovalGate('research');
+      }
+    }
+
     // Stage 1: Ideation
     let prd: ProductPRD;
     const ideationStage = getStatus('ideation');
@@ -174,7 +198,7 @@ export class PipelineOrchestrator {
       throw new Error('Ideation previously failed');
     } else {
       if (this.cancelled) return;
-      prd = await this.runIdeation(constraints.ideation, productDir);
+      prd = await this.runIdeation(constraints.ideation, productDir, researchMarkdown);
       await this.checkApprovalGate('ideation');
     }
 
@@ -298,11 +322,87 @@ export class PipelineOrchestrator {
     }).eq('run_id', this.runId).in('status', ['running', 'awaiting_approval']);
   }
 
-  private async runIdeation(config: IdeationConfig, productDir: string): Promise<ProductPRD> {
+  private async runResearch(config: ResearchConfig, ideationConfig: IdeationConfig, productDir: string): Promise<string | null> {
+    // Skip if research is disabled or no API key
+    if (!config.enabled || !env.TAVILY_API_KEY) {
+      console.log(`Run ${this.runId}: research skipped (enabled=${config.enabled}, hasKey=${!!env.TAVILY_API_KEY})`);
+      await this.insertLog('research', 'Skipping research this time — moving straight to ideation.');
+      await this.updateStageStatus('research', 'skipped');
+      return null;
+    }
+
+    await this.updateStageStatus('research', 'running');
+
+    try {
+      // Step 1: Pure API calls — gather raw data from all sources
+      const service = new ResearchService();
+      service.addSource(new TavilySource());
+      service.addSource(new ProductHuntSource());
+      service.addSource(new HackerNewsSource());
+      service.addSource(new RedditSource());
+
+      // Build research context from ideation constraints + topics
+      const context: ResearchContext = {
+        platform: ideationConfig.platform,
+        audience: ideationConfig.audience,
+        topics: config.topics,
+      };
+
+      await this.insertLog('research', 'Gathering market intelligence from multiple sources...');
+      const rawData: RawResearchData = await service.gather(context, env.TAVILY_API_KEY);
+
+      // Log per-source breakdown
+      for (const sr of rawData.sourceResults) {
+        if (sr.count === 0) {
+          await this.insertLog('research', `${sr.name}: no results`);
+        } else {
+          const topTitles = sr.signals.slice(0, 3).map((s) => s.title).join(' | ');
+          await this.insertLog('research', `${sr.name}: ${sr.count} signals — ${topTitles}`);
+        }
+      }
+      await this.insertLog('research', `Total: ${rawData.totalSignals} signals from ${rawData.sourcesUsed.length} sources`);
+
+      if (rawData.totalSignals === 0) {
+        console.log(`Run ${this.runId}: research found no signals, skipping synthesis`);
+        await this.updateStageStatus('research', 'skipped');
+        return null;
+      }
+
+      // Step 2: Claude synthesizes raw data into a markdown research brief
+      const prompt = buildResearcherPrompt(rawData, config);
+      const result = await this.runner.runOnce(prompt, {
+        runId: this.runId,
+        stage: 'research',
+        cwd: productDir,
+        maxBudgetUsd: 2,
+        agentId: this.agentMap.get('research'),
+      });
+
+      const markdown = result.text?.trim();
+      if (!markdown) {
+        throw new Error('Research synthesis failed to produce a valid brief');
+      }
+
+      // Store markdown in stage output
+      await db.from('run_stages').update({
+        status: 'completed',
+        output_context: { markdown },
+        cost_usd: result.cost,
+        completed_at: new Date().toISOString(),
+      }).eq('run_id', this.runId).eq('stage', 'research');
+
+      return markdown;
+    } catch (err) {
+      if (!this.cancelled) await this.updateStageStatus('research', 'failed');
+      throw err;
+    }
+  }
+
+  private async runIdeation(config: IdeationConfig, productDir: string, researchMarkdown?: string | null): Promise<ProductPRD> {
     await this.updateStageStatus('ideation', 'running');
 
     try {
-      const prompt = buildIdeatorPrompt(config);
+      const prompt = buildIdeatorPrompt(config, researchMarkdown ?? undefined);
       const result = await this.runner.runOnce(prompt, {
         runId: this.runId,
         stage: 'ideation',
@@ -843,6 +943,7 @@ export class PipelineOrchestrator {
 
     const map = Object.fromEntries(data.map((c: { department: string; config: unknown }) => [c.department, c.config]));
     return {
+      research: (map.research ?? { enabled: false }) as ResearchConfig,
       ideation: map.ideation as IdeationConfig,
       branding: (map.branding ?? { max_domain_price: 15, preferred_tlds: ['xyz'] }) as BrandingConfig,
       planning: map.planning as PlanningConfig,
