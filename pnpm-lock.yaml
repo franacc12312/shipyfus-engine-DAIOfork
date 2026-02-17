@@ -26,6 +26,9 @@ importers:
       '@daio/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@daio/social':
+        specifier: workspace:*
+        version: link:../../packages/social
       '@supabase/supabase-js':
         specifier: ^2.49.0
         version: 2.95.3
@@ -177,6 +180,15 @@ importers:
       zod:
         specifier: ^3.24.0
         version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@22.19.10)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.2)(tsx@4.21.0)
+
+  packages/social:
     devDependencies:
       typescript:
         specifier: ^5.8.0

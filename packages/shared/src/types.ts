@@ -107,7 +107,7 @@ export interface Participant {
 
 // Enums and unions
 
-export type Department = 'research' | 'ideation' | 'branding' | 'planning' | 'development' | 'deployment';
+export type Department = 'research' | 'ideation' | 'branding' | 'planning' | 'development' | 'deployment' | 'distribution';
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped' | 'awaiting_approval';
 export type ProductStatus = 'built' | 'tested' | 'deployed' | 'archived';
@@ -122,6 +122,7 @@ export interface HitlConfig {
   gate_after_branding: boolean;
   gate_after_planning: boolean;
   gate_after_development: boolean;
+  gate_after_deployment: boolean;
   updated_at: string;
   updated_by: string | null;
 }
@@ -183,7 +184,13 @@ export interface DeploymentConfig {
   custom_rules?: string[];
 }
 
-export type ConstraintConfig = ResearchConfig | IdeationConfig | BrandingConfig | PlanningConfig | DevelopmentConfig | DeploymentConfig;
+export interface DistributionConfig {
+  enabled?: boolean;
+  platforms?: string[];
+  custom_rules?: string[];
+}
+
+export type ConstraintConfig = ResearchConfig | IdeationConfig | BrandingConfig | PlanningConfig | DevelopmentConfig | DeploymentConfig | DistributionConfig;
 
 // PRD output from ideation
 export interface ProductPRD {

@@ -6,6 +6,7 @@ import {
   planningConfigSchema,
   developmentConfigSchema,
   deploymentConfigSchema,
+  distributionConfigSchema,
   departmentSchema,
   agentSchema,
   agentCharacteristicsSchema,
@@ -160,9 +161,28 @@ describe('deploymentConfigSchema', () => {
   });
 });
 
+describe('distributionConfigSchema', () => {
+  it('validates a correct distribution config', () => {
+    const config = {
+      enabled: true,
+      platforms: ['twitter'],
+      custom_rules: ['Use formal tone'],
+    };
+    expect(distributionConfigSchema.parse(config)).toEqual(config);
+  });
+
+  it('accepts empty config (all optional)', () => {
+    expect(distributionConfigSchema.parse({})).toEqual({});
+  });
+
+  it('accepts config with only enabled field', () => {
+    expect(distributionConfigSchema.parse({ enabled: false })).toEqual({ enabled: false });
+  });
+});
+
 describe('departmentSchema', () => {
-  it('validates all department names including research and branding', () => {
-    for (const dept of ['research', 'ideation', 'branding', 'planning', 'development', 'deployment']) {
+  it('validates all department names including research, branding, and distribution', () => {
+    for (const dept of ['research', 'ideation', 'branding', 'planning', 'development', 'deployment', 'distribution']) {
       expect(departmentSchema.parse(dept)).toBe(dept);
     }
   });
@@ -173,9 +193,9 @@ describe('departmentSchema', () => {
 });
 
 describe('constants', () => {
-  it('STAGES has exactly 6 entries in correct order', () => {
-    expect(STAGES).toEqual(['research', 'ideation', 'branding', 'planning', 'development', 'deployment']);
-    expect(STAGES).toHaveLength(6);
+  it('STAGES has exactly 7 entries in correct order', () => {
+    expect(STAGES).toEqual(['research', 'ideation', 'branding', 'planning', 'development', 'deployment', 'distribution']);
+    expect(STAGES).toHaveLength(7);
   });
 
   it('RUN_STATUSES has all expected values', () => {
@@ -210,7 +230,7 @@ describe('stageStatusSchema', () => {
 });
 
 describe('hitlConfigSchema', () => {
-  it('validates a complete HITL config including gate_after_research and gate_after_branding', () => {
+  it('validates a complete HITL config including gate_after_research, gate_after_branding, and gate_after_deployment', () => {
     const config = {
       enabled: true,
       gate_after_research: true,
@@ -218,6 +238,7 @@ describe('hitlConfigSchema', () => {
       gate_after_branding: true,
       gate_after_planning: false,
       gate_after_development: true,
+      gate_after_deployment: false,
     };
     expect(hitlConfigSchema.parse(config)).toEqual(config);
   });
@@ -234,6 +255,7 @@ describe('hitlConfigSchema', () => {
         gate_after_branding: true,
         gate_after_planning: true,
         gate_after_development: true,
+        gate_after_deployment: false,
       })
     ).toThrow();
   });
@@ -247,6 +269,7 @@ describe('hitlConfigSchema', () => {
         gate_after_branding: true,
         gate_after_planning: true,
         gate_after_development: true,
+        gate_after_deployment: false,
       })
     ).toThrow();
   });
@@ -291,7 +314,7 @@ describe('rejectStageSchema', () => {
     expect(() => rejectStageSchema.parse({ action: 'approve' })).toThrow();
   });
 
-  it('AGENT_SLUGS has all 7 agent slugs', () => {
+  it('AGENT_SLUGS has all 8 agent slugs', () => {
     expect(AGENT_SLUGS.RESEARCHER).toBe('researcher');
     expect(AGENT_SLUGS.IDEATOR).toBe('ideator');
     expect(AGENT_SLUGS.BRANDER).toBe('brander');
@@ -299,6 +322,7 @@ describe('rejectStageSchema', () => {
     expect(AGENT_SLUGS.PLANNER).toBe('planner');
     expect(AGENT_SLUGS.DEVELOPER).toBe('developer');
     expect(AGENT_SLUGS.DEPLOYER).toBe('deployer');
+    expect(AGENT_SLUGS.HERALD).toBe('herald');
   });
 
   it('STAGE_AGENT_MAP maps all stages to agent slugs', () => {
@@ -308,6 +332,7 @@ describe('rejectStageSchema', () => {
     expect(STAGE_AGENT_MAP.planning).toBe('planner');
     expect(STAGE_AGENT_MAP.development).toBe('developer');
     expect(STAGE_AGENT_MAP.deployment).toBe('deployer');
+    expect(STAGE_AGENT_MAP.distribution).toBe('herald');
   });
 });
 

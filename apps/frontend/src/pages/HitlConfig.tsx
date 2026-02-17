@@ -9,6 +9,7 @@ const GATE_FIELDS = [
   { key: 'gate_after_branding' as const, label: 'After Branding', desc: 'Pause before planning begins' },
   { key: 'gate_after_planning' as const, label: 'After Planning', desc: 'Pause before development begins' },
   { key: 'gate_after_development' as const, label: 'After Development', desc: 'Pause before deployment begins' },
+  { key: 'gate_after_deployment' as const, label: 'After Deployment', desc: 'Pause before distribution begins' },
 ];
 
 export function HitlConfig() {
@@ -37,6 +38,7 @@ export function HitlConfig() {
         gate_after_branding: config.gate_after_branding,
         gate_after_planning: config.gate_after_planning,
         gate_after_development: config.gate_after_development,
+        gate_after_deployment: config.gate_after_deployment,
       });
       setConfig(updated);
       setSaved(true);
@@ -117,7 +119,7 @@ export function HitlConfig() {
 
           {/* Pipeline visualization */}
           <div className="flex items-center justify-center gap-1 mb-6 py-3">
-            {['Research', 'Ideation', 'Branding', 'Planning', 'Development', 'Deployment'].map((stage, i) => {
+            {['Research', 'Ideation', 'Branding', 'Planning', 'Development', 'Deployment', 'Distribution'].map((stage, i) => {
               const gateField = GATE_FIELDS[i];
               const gateActive = config.enabled && gateField && config[gateField.key];
               return (
