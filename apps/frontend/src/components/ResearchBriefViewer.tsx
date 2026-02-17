@@ -6,6 +6,7 @@ import type { RunStage } from '@daio/shared';
 interface ResearchBriefViewerProps {
   runId: string;
   stage: RunStage;
+  onApproved?: () => void;
 }
 
 function parseMarkdownSections(markdown: string): { heading: string; items: string[] }[] {
@@ -30,7 +31,7 @@ function parseMarkdownSections(markdown: string): { heading: string; items: stri
   return sections;
 }
 
-export function ResearchBriefViewer({ runId, stage }: ResearchBriefViewerProps) {
+export function ResearchBriefViewer({ runId, stage, onApproved }: ResearchBriefViewerProps) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -42,6 +43,7 @@ export function ResearchBriefViewer({ runId, stage }: ResearchBriefViewerProps) 
     setApproving(true);
     try {
       await approveStage(runId, 'research');
+      onApproved?.();
     } catch (err) {
       console.error('Failed to approve:', err);
     }

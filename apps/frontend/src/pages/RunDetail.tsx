@@ -11,7 +11,7 @@ import { DocumentViewer } from '../components/DocumentViewer';
 import { AdminGate } from '../components/AdminGate';
 import { ApprovalGate } from '../components/ApprovalGate';
 import { api } from '../lib/api';
-import { STAGES } from '@daio/shared';
+import { STAGES, type Department } from '@daio/shared';
 
 const STAGE_TABS = ['all', ...STAGES] as const;
 
@@ -78,6 +78,13 @@ export function RunDetail() {
     setRetrying(false);
   }
 
+  function handleStageApproved(completedStage: Department) {
+    const nextIndex = STAGES.indexOf(completedStage);
+    const nextStage = nextIndex >= 0 && nextIndex + 1 < STAGES.length ? STAGES[nextIndex + 1] : 'all';
+    setViewMode('terminal');
+    setActiveTab(nextStage);
+  }
+
   return (
     <div className="p-6">
       {/* Header */}
@@ -123,7 +130,12 @@ export function RunDetail() {
 
       {/* Approval gate (shown when any stage is awaiting approval) */}
       {run.run_stages?.filter((s) => s.status === 'awaiting_approval').map((s) => (
-        <ApprovalGate key={s.id} runId={run.id} stage={s} />
+        <ApprovalGate
+          key={s.id}
+          runId={run.id}
+          stage={s}
+          onApproved={() => handleStageApproved(s.stage as Department)}
+        />
       ))}
 
       {/* Info + Logs layout */}

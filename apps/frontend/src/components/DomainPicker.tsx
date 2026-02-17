@@ -6,9 +6,10 @@ import type { RunStage, DomainChoice } from '@daio/shared';
 interface DomainPickerProps {
   runId: string;
   stage: RunStage;
+  onApproved?: () => void;
 }
 
-export function DomainPicker({ runId, stage }: DomainPickerProps) {
+export function DomainPicker({ runId, stage, onApproved }: DomainPickerProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [purchasing, setPurchasing] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -22,6 +23,7 @@ export function DomainPicker({ runId, stage }: DomainPickerProps) {
     setPurchasing(true);
     try {
       await approveStage(runId, 'branding', candidates[selected]);
+      onApproved?.();
     } catch (err) {
       console.error('Failed to approve branding:', err);
     }

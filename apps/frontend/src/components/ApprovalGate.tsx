@@ -16,12 +16,13 @@ const STAGE_LABELS: Record<string, string> = {
 interface ApprovalGateProps {
   runId: string;
   stage: RunStage;
+  onApproved?: () => void;
 }
 
-export function ApprovalGate({ runId, stage }: ApprovalGateProps) {
+export function ApprovalGate({ runId, stage, onApproved }: ApprovalGateProps) {
   // Route research stage to the dedicated brief viewer
   if (stage.stage === 'research') {
-    return <ResearchBriefViewer runId={runId} stage={stage} />;
+    return <ResearchBriefViewer runId={runId} stage={stage} onApproved={onApproved} />;
   }
 
   const [approving, setApproving] = useState(false);
@@ -31,13 +32,14 @@ export function ApprovalGate({ runId, stage }: ApprovalGateProps) {
   // Delegate to DomainPicker for branding stage with candidates
   const ctx = stage.output_context as Record<string, unknown> | null;
   if (stage.stage === 'branding' && ctx?.candidates) {
-    return <DomainPicker runId={runId} stage={stage} />;
+    return <DomainPicker runId={runId} stage={stage} onApproved={onApproved} />;
   }
 
   async function handleApprove() {
     setApproving(true);
     try {
       await approveStage(runId, stage.stage);
+      onApproved?.();
     } catch (err) {
       console.error('Failed to approve:', err);
     }
