@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { db } from '../services/db.js';
 import { env } from '../env.js';
@@ -62,13 +62,23 @@ export class PipelineOrchestrator {
       await this.updateRunStatus('running');
       await this.resolveAgents();
 
-      // Create all stage records
-      for (const stage of STAGE_ORDER) {
-        await db.from('run_stages').insert({
-          run_id: this.runId,
-          stage,
-          status: 'pending',
-        });
+      // Check run metadata for startFrom support
+      const { data: runData } = await db
+        .from('runs')
+        .select('metadata')
+        .eq('id', this.runId)
+        .single();
+
+      const metadata = (runData?.metadata as Record<string, unknown>) || {};
+      const startFrom = metadata._startFrom as string | undefined;
+      const sourceRunId = metadata._sourceRunId as string | undefined;
+
+      if (startFrom && sourceRunId) {
+        await this.createStagesFromSource(startFrom, sourceRunId);
+      } else {
+        for (const stage of STAGE_ORDER) {
+          await db.from('run_stages').insert({ run_id: this.runId, stage, status: 'pending' });
+        }
       }
 
       await this.runPipelineWithRetry();
@@ -84,6 +94,98 @@ export class PipelineOrchestrator {
       }
     } finally {
       await this.runner.destroy();
+    }
+  }
+
+  private async createStagesFromSource(startFrom: string, sourceRunId: string): Promise<void> {
+    const startIdx = STAGE_ORDER.indexOf(startFrom as typeof STAGE_ORDER[number]);
+
+    const { data: sourceStages } = await db
+      .from('run_stages')
+      .select('stage, status, output_context')
+      .eq('run_id', sourceRunId);
+
+    const sourceMap = new Map(
+      (sourceStages || []).map((s: { stage: string; status: string; output_context: unknown }) => [s.stage, s]),
+    );
+
+    // Prior stages get copied from source; remaining stages start as pending
+    for (let i = 0; i < STAGE_ORDER.length; i++) {
+      const stage = STAGE_ORDER[i];
+      if (i >= startIdx) {
+        await db.from('run_stages').insert({ run_id: this.runId, stage, status: 'pending' });
+        continue;
+      }
+
+      const source = sourceMap.get(stage) as { status: string; output_context: unknown } | undefined;
+      await db.from('run_stages').insert({
+        run_id: this.runId,
+        stage,
+        status: (!source || source.status === 'skipped') ? 'skipped' : 'completed',
+        output_context: source?.output_context ?? null,
+        completed_at: new Date().toISOString(),
+      });
+    }
+
+    // Copy run-level fields (idea_summary, domain_name) from source
+    await this.copyRunFieldsFromSource(startIdx, sourceRunId);
+
+    // Copy file artifacts (PLAN.md, product files) if needed
+    await this.copySourceArtifacts(startIdx, sourceRunId);
+  }
+
+  private async copyRunFieldsFromSource(startIdx: number, sourceRunId: string): Promise<void> {
+    const ideationIdx = STAGE_ORDER.indexOf('ideation');
+    if (startIdx <= ideationIdx) return;
+
+    const { data: sourceRun } = await db
+      .from('runs')
+      .select('idea_summary, domain_name')
+      .eq('id', sourceRunId)
+      .single();
+
+    if (!sourceRun) return;
+
+    const updates: Record<string, unknown> = {};
+    if (sourceRun.idea_summary) updates.idea_summary = sourceRun.idea_summary;
+
+    const brandingIdx = STAGE_ORDER.indexOf('branding');
+    if (startIdx > brandingIdx && sourceRun.domain_name) {
+      updates.domain_name = sourceRun.domain_name;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await db.from('runs').update(updates).eq('id', this.runId);
+    }
+  }
+
+  private async copySourceArtifacts(startIdx: number, sourceRunId: string): Promise<void> {
+    const sourceDir = resolve(PRODUCTS_DIR, sourceRunId);
+    const targetDir = resolve(PRODUCTS_DIR, this.runId);
+    mkdirSync(targetDir, { recursive: true });
+
+    const devIdx = STAGE_ORDER.indexOf('development');
+    const deployIdx = STAGE_ORDER.indexOf('deployment');
+
+    // Copy PLAN.md if starting at or before development
+    if (startIdx <= devIdx) {
+      const planSrc = resolve(sourceDir, 'thoughts', 'PLAN.md');
+      if (existsSync(planSrc)) {
+        const thoughtsDir = resolve(targetDir, 'thoughts');
+        mkdirSync(thoughtsDir, { recursive: true });
+        cpSync(planSrc, resolve(thoughtsDir, 'PLAN.md'));
+      } else {
+        console.warn(`Run ${this.runId}: source PLAN.md not found at ${planSrc}`);
+      }
+    }
+
+    // Copy entire product directory if starting from deployment
+    if (startIdx === deployIdx) {
+      if (existsSync(sourceDir)) {
+        cpSync(sourceDir, targetDir, { recursive: true });
+      } else {
+        console.warn(`Run ${this.runId}: source product directory not found at ${sourceDir}`);
+      }
     }
   }
 

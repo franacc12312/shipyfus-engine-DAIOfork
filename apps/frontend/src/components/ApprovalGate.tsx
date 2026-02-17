@@ -17,9 +17,10 @@ interface ApprovalGateProps {
   runId: string;
   stage: RunStage;
   onApproved?: () => void;
+  onViewDocs?: () => void;
 }
 
-export function ApprovalGate({ runId, stage, onApproved }: ApprovalGateProps) {
+export function ApprovalGate({ runId, stage, onApproved, onViewDocs }: ApprovalGateProps) {
   // Route research stage to the dedicated brief viewer
   if (stage.stage === 'research') {
     return <ResearchBriefViewer runId={runId} stage={stage} onApproved={onApproved} />;
@@ -28,6 +29,7 @@ export function ApprovalGate({ runId, stage, onApproved }: ApprovalGateProps) {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showPrd, setShowPrd] = useState(false);
 
   // Delegate to DomainPicker for branding stage with candidates
   const ctx = stage.output_context as Record<string, unknown> | null;
@@ -82,17 +84,74 @@ export function ApprovalGate({ runId, stage, onApproved }: ApprovalGateProps) {
         has completed and is awaiting your review.
       </p>
 
-      {stage.output_context && (
-        <div className="bg-zinc-950/50 rounded p-2 mt-2 mb-3 text-[10px] text-zinc-400 max-h-24 overflow-auto">
-          {typeof stage.output_context === 'object' && 'productName' in stage.output_context ? (
-            <span>Product: <span className="text-zinc-200">{String((stage.output_context as Record<string, unknown>).productName)}</span></span>
-          ) : typeof stage.output_context === 'object' && 'completed' in stage.output_context ? (
-            <span>Completed: <span className="text-zinc-200">{String((stage.output_context as Record<string, unknown>).completed)}</span>, Iterations: <span className="text-zinc-200">{String((stage.output_context as Record<string, unknown>).iterations)}</span></span>
-          ) : (
-            <span className="text-zinc-500">Output available</span>
-          )}
-        </div>
-      )}
+      {stage.output_context && (() => {
+        const oc = stage.output_context as Record<string, unknown>;
+        return (
+          <div className="mt-2 mb-3 space-y-2">
+            <div className="bg-zinc-950/50 rounded p-2 text-[10px] text-zinc-400">
+              {stage.stage === 'ideation' && oc.productName ? (
+                <span>Product: <span className="text-zinc-200">{String(oc.productName)}</span></span>
+              ) : stage.stage === 'planning' && oc.phases ? (
+                <span>Phases: <span className="text-zinc-200">{Array.isArray(oc.phases) ? oc.phases.length : '?'}</span>, Tasks: <span className="text-zinc-200">{Array.isArray(oc.phases) ? (oc.phases as Array<{ tasks?: unknown[] }>).reduce((sum, p) => sum + (Array.isArray(p.tasks) ? p.tasks.length : 0), 0) : '?'}</span></span>
+              ) : stage.stage === 'development' && 'completed' in oc ? (
+                <span>
+                  Status: <span className={oc.completed ? 'text-terminal-green' : 'text-terminal-amber'}>{oc.completed ? 'COMPLETE' : 'IN PROGRESS'}</span>
+                  , Iterations: <span className="text-zinc-200">{String(oc.iterations ?? '?')}</span>
+                  {oc.cost_usd != null && <>, Cost: <span className="text-zinc-200">${Number(oc.cost_usd).toFixed(2)}</span></>}
+                </span>
+              ) : (
+                <span className="text-zinc-500">Output available</span>
+              )}
+            </div>
+
+            {stage.stage === 'ideation' && !!oc.productName && (
+              <>
+                <button
+                  onClick={() => setShowPrd((v) => !v)}
+                  className="text-[10px] text-terminal-cyan hover:text-terminal-cyan/80 tracking-wider transition"
+                >
+                  {showPrd ? '▾ HIDE PRD' : '▸ VIEW PRD'}
+                </button>
+                {showPrd && (
+                  <div className="bg-zinc-950/50 rounded p-3 text-[10px] text-zinc-400 max-h-64 overflow-auto space-y-1.5">
+                    {!!oc.productDescription && <div><span className="text-zinc-500">Description:</span> <span className="text-zinc-200">{String(oc.productDescription)}</span></div>}
+                    {!!oc.targetUser && <div><span className="text-zinc-500">Target User:</span> <span className="text-zinc-200">{String(oc.targetUser)}</span></div>}
+                    {!!oc.problemStatement && <div><span className="text-zinc-500">Problem:</span> <span className="text-zinc-200">{String(oc.problemStatement)}</span></div>}
+                    {Array.isArray(oc.coreFunctionality) && oc.coreFunctionality.length > 0 && (
+                      <div>
+                        <span className="text-zinc-500">Core Features:</span>
+                        <ul className="list-disc list-inside ml-1 mt-0.5 space-y-0.5">
+                          {(oc.coreFunctionality as string[]).map((f, i) => <li key={i} className="text-zinc-200">{f}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {!!oc.mvpScope && <div><span className="text-zinc-500">MVP Scope:</span> <span className="text-zinc-200">{String(oc.mvpScope)}</span></div>}
+                    {!!oc.uniqueValue && <div><span className="text-zinc-500">Unique Value:</span> <span className="text-zinc-200">{String(oc.uniqueValue)}</span></div>}
+                  </div>
+                )}
+              </>
+            )}
+
+            {stage.stage === 'planning' && onViewDocs && (
+              <button
+                onClick={onViewDocs}
+                className="text-[10px] text-terminal-cyan hover:text-terminal-cyan/80 tracking-wider transition"
+              >
+                ▸ VIEW PLAN
+              </button>
+            )}
+
+            {stage.stage === 'development' && onViewDocs && (
+              <button
+                onClick={onViewDocs}
+                className="text-[10px] text-terminal-cyan hover:text-terminal-cyan/80 tracking-wider transition"
+              >
+                ▸ VIEW PROGRESS
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       <div className="flex gap-2 mt-3">
         <AdminGate>
