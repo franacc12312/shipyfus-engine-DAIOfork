@@ -17,7 +17,7 @@ vi.mock('../services/db.js', () => {
   const chainable = {
     eq: vi.fn().mockReturnThis(),
     in: vi.fn().mockReturnThis(),
-    single: vi.fn().mockResolvedValue({ data: { status: 'completed', output_context: { purchased: true } }, error: null }),
+    single: vi.fn().mockResolvedValue({ data: { status: 'completed', output_context: { purchased: true }, metadata: {} }, error: null }),
     select: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockResolvedValue({ data: [{ id: 'cfo-agent-id' }] }),
@@ -161,6 +161,8 @@ vi.mock('../agents/runner.js', () => ({
 // Mock fs
 vi.mock('node:fs', () => ({
   mkdirSync: vi.fn(),
+  cpSync: vi.fn(),
+  existsSync: vi.fn().mockReturnValue(false),
 }));
 
 import { PipelineOrchestrator } from '../orchestrator/pipeline.js';

@@ -135,6 +135,7 @@ export function RunDetail() {
           runId={run.id}
           stage={s}
           onApproved={() => handleStageApproved(s.stage as Department)}
+          onViewDocs={() => setViewMode('docs')}
         />
       ))}
 

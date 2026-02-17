@@ -49,6 +49,8 @@ daio/
 ## Database
 Hosted Supabase (project ref: yxwkvbvbugknxdrvpzlq). Tables: users, constraints, runs, run_stages, logs, products. Realtime enabled on runs, run_stages, logs.
 
+**ALWAYS use the Supabase CLI** (`supabase` / `npx supabase`) for all database operations — migrations, schema changes, seeding, branching, etc. NEVER run SQL manually in the Supabase dashboard console. Everything must be automated and reproducible via CLI so that no human intervention is required. If a database operation can't be done through the CLI, find a way to script it.
+
 ## Pipeline
 1. **Ideation** (one-shot): Generates PRD from constraints
 2. **Planning** (one-shot): Converts PRD to structured PLAN.md
