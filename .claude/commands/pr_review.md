@@ -92,6 +92,10 @@ Present findings in this format:
 [List of changed files with brief notes]
 ```
 
+### 9. Auto-merge if clean
+- If the verdict is **✅ MERGE** (no blocking issues, no "MERGE WITH NOTES"), immediately merge the PR using `gh pr merge <number> --squash --delete-branch`.
+- If the verdict is **⚠️ MERGE WITH NOTES** or **❌ REQUEST CHANGES**, do NOT merge — only give the recommendation.
+
 ## Rules
 - Always check out the actual branch and run real builds/tests — never just review the diff alone.
 - If `$ARGUMENTS` is a full URL, extract the PR number from it.
@@ -99,5 +103,4 @@ Present findings in this format:
 - Be specific about issues: reference file paths and line numbers.
 - Distinguish between blocking issues (❌) and suggestions (nice-to-have).
 - After the review, return to the previous branch (`git checkout -`).
-- Do NOT merge the PR — only give a recommendation.
 - Do NOT push any changes or leave comments on the PR unless the user asks.
