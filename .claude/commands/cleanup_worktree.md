@@ -10,7 +10,7 @@ The user provides a worktree name or Linear issue identifier: $ARGUMENTS
    - If no argument, check if the current working directory is inside a `.worktrees/` subdirectory and use that
    - If neither, list available worktrees in `.worktrees/` and ask the user which one to clean up
 2. Get the branch name associated with the worktree by running `git worktree list` and finding the matching entry.
-3. Confirm with the user: show the worktree path and branch name, ask if they want to proceed.
+3. If the worktree was confidently inferred (from `$ARGUMENTS` or current directory), proceed without confirmation. Only ask the user to confirm if the match is ambiguous or uncertain.
 4. If the current working directory is inside the worktree being removed, `cd` to the project root first.
 5. **Deallocate ports and check for Supabase branch**: Read `.worktrees/ports.json`, check the worktree's entry for a `branch` field (save it for step 6), then remove the entry from the registry and write the updated file back. NEVER remove the "main" entry.
 6. **Delete Supabase branch if it exists:** If the entry from step 5 had a `branch` field:

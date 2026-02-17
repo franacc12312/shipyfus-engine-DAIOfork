@@ -148,14 +148,10 @@ export const startRunSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
   startFrom: departmentSchema.optional(),
   sourceRunId: z.string().uuid().optional(),
+  mockDomainPurchase: z.boolean().optional(),
 }).refine(
-  (data) => {
-    // sourceRunId required when startFrom is set (except 'research' which is a no-op)
-    if (data.startFrom && data.startFrom !== 'research' && !data.sourceRunId) {
-      return false;
-    }
-    return true;
-  },
+  // sourceRunId required when startFrom is set (except 'research' which is a no-op)
+  (data) => !data.startFrom || data.startFrom === 'research' || !!data.sourceRunId,
   { message: 'sourceRunId is required when startFrom is set (except research)', path: ['sourceRunId'] },
 );
 

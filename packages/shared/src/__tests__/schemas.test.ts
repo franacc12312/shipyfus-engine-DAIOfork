@@ -497,6 +497,20 @@ describe('startRunSchema', () => {
   it('rejects invalid sourceRunId (not uuid)', () => {
     expect(() => startRunSchema.parse({ startFrom: 'planning', sourceRunId: 'not-a-uuid' })).toThrow();
   });
+
+  it('accepts mockDomainPurchase flag', () => {
+    const body = { mockDomainPurchase: true };
+    expect(startRunSchema.parse(body)).toEqual(body);
+  });
+
+  it('accepts mockDomainPurchase with other fields', () => {
+    const body = { mockDomainPurchase: true, startFrom: 'development', sourceRunId: '550e8400-e29b-41d4-a716-446655440000' };
+    expect(startRunSchema.parse(body)).toEqual(body);
+  });
+
+  it('rejects non-boolean mockDomainPurchase', () => {
+    expect(() => startRunSchema.parse({ mockDomainPurchase: 'yes' })).toThrow();
+  });
 });
 
 describe('agentSchema', () => {
