@@ -18,6 +18,7 @@ export function Dashboard() {
   const [devMode, setDevMode] = useState(false);
   const [startFrom, setStartFrom] = useState<Department | ''>('');
   const [sourceRunId, setSourceRunId] = useState('');
+  const [mockDomainPurchase, setMockDomainPurchase] = useState(true);
 
   useEffect(() => {
     fetchRuns();
@@ -51,6 +52,9 @@ export function Dashboard() {
       if (devMode && startFrom) {
         body.startFrom = startFrom;
         if (sourceRunId) body.sourceRunId = sourceRunId;
+      }
+      if (devMode && mockDomainPurchase) {
+        body.mockDomainPurchase = true;
       }
       await api.post('/runs', body);
       const message = devMode && startFrom
@@ -129,6 +133,18 @@ export function Dashboard() {
                   />
                 </div>
               )}
+              <div className="flex items-center gap-3">
+                <label className="text-[10px] text-yellow-500/70 uppercase tracking-wider w-24">Mock domain</label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={mockDomainPurchase}
+                    onChange={(e) => setMockDomainPurchase(e.target.checked)}
+                    className="accent-yellow-500"
+                  />
+                  <span className="text-xs text-zinc-400">Skip real Porkbun purchase</span>
+                </label>
+              </div>
             </div>
           )}
         </div>
