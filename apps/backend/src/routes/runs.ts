@@ -102,12 +102,18 @@ router.post('/', requireAdmin, async (req, res, next) => {
       return;
     }
 
-    const { metadata = {}, startFrom, sourceRunId } = parsed.data;
+    const { metadata = {}, startFrom, sourceRunId, mockDomainPurchase } = parsed.data;
 
-    // Block startFrom in production
-    if (startFrom && process.env.NODE_ENV === 'production') {
-      res.status(403).json({ error: 'startFrom is not allowed in production' });
-      return;
+    // Block dev-only features in production
+    if (process.env.NODE_ENV === 'production') {
+      if (startFrom) {
+        res.status(403).json({ error: 'startFrom is not allowed in production' });
+        return;
+      }
+      if (mockDomainPurchase) {
+        res.status(403).json({ error: 'mockDomainPurchase is not allowed in production' });
+        return;
+      }
     }
 
     // Treat startFrom='research' as a normal run (research is the first stage)
@@ -163,6 +169,7 @@ router.post('/', requireAdmin, async (req, res, next) => {
     const runMetadata: Record<string, unknown> = {
       ...metadata,
       ...(effectiveStartFrom && { _startFrom: effectiveStartFrom, _sourceRunId: sourceRunId }),
+      ...(mockDomainPurchase && { _mockDomainPurchase: true }),
     };
 
     const { data, error } = await db

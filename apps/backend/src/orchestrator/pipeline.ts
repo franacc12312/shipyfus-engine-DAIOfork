@@ -32,6 +32,7 @@ export class PipelineOrchestrator {
   private runner: AgentRunner;
   private runId: string;
   private cancelled = false;
+  private mockDomainPurchase = false;
   private agentMap = new Map<string, string>();
 
   constructor(runId: string) {
@@ -71,6 +72,7 @@ export class PipelineOrchestrator {
       const metadata = (runData?.metadata as Record<string, unknown>) || {};
       const startFrom = metadata._startFrom as string | undefined;
       const sourceRunId = metadata._sourceRunId as string | undefined;
+      this.mockDomainPurchase = metadata._mockDomainPurchase === true;
 
       if (startFrom && sourceRunId) {
         await this.createStagesFromSource(startFrom, sourceRunId);
@@ -608,43 +610,8 @@ export class PipelineOrchestrator {
       const winner = recommendations[0];
 
       // Step 4: Purchase the domain via Porkbun (CFO action)
-      let purchaseResult = null;
-      let dnsResult = null;
-      let purchaseVerified = false;
-      let purchaseError: string | undefined;
-
-      if (env.PORKBUN_API_KEY && env.PORKBUN_API_SECRET) {
-        const porkbunConfig: PorkbunConfig = {
-          apiKey: env.PORKBUN_API_KEY,
-          apiSecret: env.PORKBUN_API_SECRET,
-        };
-
-        purchaseResult = await purchaseDomain(winner.domain, porkbunConfig);
-
-        if (purchaseResult.status === 'purchased') {
-          // Verify domain actually appears in our account
-          const verification = await verifyDomainOwnership(winner.domain, porkbunConfig);
-          if (verification.verified) {
-            purchaseVerified = true;
-            dnsResult = await configureDNSForVercel(winner.domain, porkbunConfig);
-            // Log DNS results
-            if (dnsResult.allSuccess) {
-              await this.insertLog('branding', `DNS configured for ${winner.domain} (A + CNAME)`);
-            } else {
-              const failed = dnsResult.records.filter((r) => !r.success).map((r) => r.type).join(', ');
-              await this.insertLog('branding', `WARNING: DNS partially configured — failed: ${failed}`);
-            }
-          } else {
-            purchaseError = verification.error ?? 'Domain not found in account after purchase';
-            await this.insertLog('branding', `Domain purchase verification failed for ${winner.domain}: ${purchaseError}`);
-          }
-        } else {
-          purchaseError = purchaseResult.error ?? 'Purchase failed';
-          await this.insertLog('branding', `Domain purchase failed for ${winner.domain}: ${purchaseError}`);
-        }
-      } else {
-        console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
-      }
+      const { verified: purchaseVerified, dnsConfigured, error: purchaseError } =
+        await this.executeDomainPurchase(winner.domain, winner.price);
 
       // Step 5: Run CFO agent for narration/logging (only if purchase succeeded)
       if (purchaseVerified) {
@@ -672,7 +639,7 @@ export class PipelineOrchestrator {
         strategy: winner.strategy,
         reasoning: winner.reasoning,
         purchased: purchaseVerified,
-        dnsConfigured: dnsResult?.allSuccess ?? false,
+        dnsConfigured,
         alternatives: winner.alternatives,
       };
       if (purchaseError) outputContext.purchaseError = purchaseError;
@@ -709,47 +676,55 @@ export class PipelineOrchestrator {
     return data?.[0]?.id;
   }
 
+  private async executeDomainPurchase(domain: string, price: number): Promise<{ verified: boolean; dnsConfigured: boolean; error?: string }> {
+    if (this.mockDomainPurchase) {
+      await this.insertLog('branding', `[MOCK] Domain purchase simulated for ${domain}`);
+      return { verified: true, dnsConfigured: true };
+    }
+
+    if (!env.PORKBUN_API_KEY || !env.PORKBUN_API_SECRET) {
+      console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
+      return { verified: false, dnsConfigured: false };
+    }
+
+    const porkbunConfig: PorkbunConfig = {
+      apiKey: env.PORKBUN_API_KEY,
+      apiSecret: env.PORKBUN_API_SECRET,
+    };
+
+    const purchaseResult = await purchaseDomain(domain, porkbunConfig);
+    if (purchaseResult.status !== 'purchased') {
+      const error = purchaseResult.error ?? 'Purchase failed';
+      await this.insertLog('branding', `Domain purchase failed for ${domain}: ${error}`);
+      return { verified: false, dnsConfigured: false, error };
+    }
+
+    const verification = await verifyDomainOwnership(domain, porkbunConfig);
+    if (!verification.verified) {
+      const error = verification.error ?? 'Domain not found in account after purchase';
+      await this.insertLog('branding', `Domain purchase verification failed for ${domain}: ${error}`);
+      return { verified: false, dnsConfigured: false, error };
+    }
+
+    const dnsResult = await configureDNSForVercel(domain, porkbunConfig);
+    if (dnsResult.allSuccess) {
+      await this.insertLog('branding', `DNS configured for ${domain} (A + CNAME)`);
+    } else {
+      const failed = dnsResult.records.filter((r) => !r.success).map((r) => r.type).join(', ');
+      await this.insertLog('branding', `WARNING: DNS partially configured — failed: ${failed}`);
+    }
+
+    return { verified: true, dnsConfigured: dnsResult.allSuccess };
+  }
+
   private async completeBrandingPurchase(
     chosen: DomainChoice,
     prd: ProductPRD,
     productDir: string,
   ): Promise<{ prd: ProductPRD; domainName: string | null }> {
-    // Purchase domain via Porkbun
-    let purchaseResult = null;
-    let dnsResult = null;
-    let purchaseVerified = false;
-    let purchaseError: string | undefined;
-
-    if (env.PORKBUN_API_KEY && env.PORKBUN_API_SECRET) {
-      const porkbunConfig: PorkbunConfig = {
-        apiKey: env.PORKBUN_API_KEY,
-        apiSecret: env.PORKBUN_API_SECRET,
-      };
-
-      purchaseResult = await purchaseDomain(chosen.domain, porkbunConfig);
-
-      if (purchaseResult.status === 'purchased') {
-        const verification = await verifyDomainOwnership(chosen.domain, porkbunConfig);
-        if (verification.verified) {
-          purchaseVerified = true;
-          dnsResult = await configureDNSForVercel(chosen.domain, porkbunConfig);
-          if (dnsResult.allSuccess) {
-            await this.insertLog('branding', `DNS configured for ${chosen.domain} (A + CNAME)`);
-          } else {
-            const failed = dnsResult.records.filter((r) => !r.success).map((r) => r.type).join(', ');
-            await this.insertLog('branding', `WARNING: DNS partially configured — failed: ${failed}`);
-          }
-        } else {
-          purchaseError = verification.error ?? 'Domain not found in account after purchase';
-          await this.insertLog('branding', `Domain purchase verification failed for ${chosen.domain}: ${purchaseError}`);
-        }
-      } else {
-        purchaseError = purchaseResult.error ?? 'Purchase failed';
-        await this.insertLog('branding', `Domain purchase failed for ${chosen.domain}: ${purchaseError}`);
-      }
-    } else {
-      console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
-    }
+    // Purchase domain via Porkbun (or mock)
+    const { verified: purchaseVerified, dnsConfigured, error: purchaseError } =
+      await this.executeDomainPurchase(chosen.domain, chosen.price);
 
     // Run CFO agent for narration (only if purchase succeeded)
     if (purchaseVerified) {
@@ -786,7 +761,7 @@ export class PipelineOrchestrator {
       strategy: chosen.strategy,
       reasoning: chosen.reasoning,
       purchased: purchaseVerified,
-      dnsConfigured: dnsResult?.allSuccess ?? false,
+      dnsConfigured,
     };
     if (purchaseError) mergedCtx.purchaseError = purchaseError;
 
