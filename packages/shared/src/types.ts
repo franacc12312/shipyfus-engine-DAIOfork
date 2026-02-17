@@ -164,6 +164,7 @@ export interface PlanningConfig {
 }
 
 export interface DevelopmentConfig {
+  enabled?: boolean;
   framework?: string;
   language?: string;
   max_files?: number;

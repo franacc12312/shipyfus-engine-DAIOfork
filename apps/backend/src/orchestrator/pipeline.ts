@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { db } from '../services/db.js';
 import { env } from '../env.js';
@@ -21,6 +21,20 @@ import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, De
 import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
+
+function buildStubHtml(productName: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${productName}</title>
+</head>
+<body>
+  <h1>${productName}</h1>
+</body>
+</html>`;
+}
 
 export class RetryStageError extends Error {
   stage: string;
@@ -384,7 +398,7 @@ export class PipelineOrchestrator {
       throw new Error('Development previously failed');
     } else {
       if (this.cancelled) return;
-      await this.runDevelopment(constraints.development, productDir);
+      await this.runDevelopment(constraints.development, productDir, prd.productName);
       await this.checkApprovalGate('development');
     }
 
@@ -837,8 +851,20 @@ export class PipelineOrchestrator {
     }
   }
 
-  private async runDevelopment(config: DevelopmentConfig, productDir: string): Promise<{ iterations: number; completed: boolean }> {
+  private async runDevelopment(config: DevelopmentConfig, productDir: string, productName: string): Promise<{ iterations: number; completed: boolean }> {
     await this.updateStageStatus('development', 'running');
+
+    if (config.enabled === false) {
+      await this.insertLog('development', `Stub mode: generating minimal index.html for "${productName}"`);
+      writeFileSync(resolve(productDir, 'index.html'), buildStubHtml(productName));
+      await db.from('run_stages').update({
+        status: 'completed',
+        iteration: 0,
+        cost_usd: 0,
+        completed_at: new Date().toISOString(),
+      }).eq('run_id', this.runId).eq('stage', 'development');
+      return { iterations: 0, completed: true };
+    }
 
     try {
       const prompt = buildDeveloperPrompt(config);
