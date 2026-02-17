@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { RunCard } from '../components/RunCard';
 import { AdminGate } from '../components/AdminGate';
-import type { Run } from '@daio/shared';
+import { STAGES } from '@daio/shared';
+import type { Run, Department } from '@daio/shared';
 
 type RunWithStages = Run & { run_stages?: any[] };
+
+const isDev = import.meta.env.DEV;
 
 export function Dashboard() {
   const [runs, setRuns] = useState<RunWithStages[]>([]);
@@ -12,6 +15,10 @@ export function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [devMode, setDevMode] = useState(false);
+  const [startFrom, setStartFrom] = useState<Department | ''>('');
+  const [sourceRunId, setSourceRunId] = useState('');
+  const [mockDomainPurchase, setMockDomainPurchase] = useState(true);
 
   useEffect(() => {
     fetchRuns();
@@ -41,12 +48,23 @@ export function Dashboard() {
   async function startRun() {
     setStarting(true);
     try {
-      await api.post('/runs');
-      setToast({ message: 'Run started successfully', type: 'success' });
+      const body: Record<string, unknown> = {};
+      if (devMode && startFrom) {
+        body.startFrom = startFrom;
+        if (sourceRunId) body.sourceRunId = sourceRunId;
+      }
+      if (devMode && mockDomainPurchase) {
+        body.mockDomainPurchase = true;
+      }
+      await api.post('/runs', body);
+      const message = devMode && startFrom
+        ? `Run started from ${startFrom}`
+        : 'Run started successfully';
+      setToast({ message, type: 'success' });
       await fetchRuns();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to start run';
-      setToast({ message: msg, type: 'error' });
+      const message = err instanceof Error ? err.message : 'Failed to start run';
+      setToast({ message, type: 'error' });
       console.error('Failed to start run:', err);
     } finally {
       setStarting(false);
@@ -78,6 +96,59 @@ export function Dashboard() {
           </button>
         </AdminGate>
       </div>
+
+      {/* Dev mode panel */}
+      {isDev && (
+        <div className="mb-4">
+          <button
+            onClick={() => setDevMode(!devMode)}
+            className="text-[10px] text-yellow-500/70 hover:text-yellow-500 tracking-wider transition"
+          >
+            {devMode ? '[-] DEV MODE' : '[+] DEV MODE'}
+          </button>
+          {devMode && (
+            <div className="mt-2 bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-3 space-y-2">
+              <div className="flex items-center gap-3">
+                <label className="text-[10px] text-yellow-500/70 uppercase tracking-wider w-24">Start from</label>
+                <select
+                  value={startFrom}
+                  onChange={(e) => setStartFrom(e.target.value as Department | '')}
+                  className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300 flex-1"
+                >
+                  <option value="">Normal (all stages)</option>
+                  {STAGES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              {startFrom && startFrom !== 'research' && (
+                <div className="flex items-center gap-3">
+                  <label className="text-[10px] text-yellow-500/70 uppercase tracking-wider w-24">Source run</label>
+                  <input
+                    type="text"
+                    value={sourceRunId}
+                    onChange={(e) => setSourceRunId(e.target.value.trim())}
+                    placeholder="Paste run ID..."
+                    className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300 flex-1 font-mono placeholder:text-zinc-600"
+                  />
+                </div>
+              )}
+              <div className="flex items-center gap-3">
+                <label className="text-[10px] text-yellow-500/70 uppercase tracking-wider w-24">Mock domain</label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={mockDomainPurchase}
+                    onChange={(e) => setMockDomainPurchase(e.target.checked)}
+                    className="accent-yellow-500"
+                  />
+                  <span className="text-xs text-zinc-400">Skip real Porkbun purchase</span>
+                </label>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Stats bar */}
       <div className="grid grid-cols-4 gap-3 mb-6">

@@ -18,6 +18,7 @@ import {
   rejectStageSchema,
   domainChoiceSchema,
   approveStageSchema,
+  startRunSchema,
 } from '../schemas.js';
 import { STAGES, RUN_STATUSES, STAGE_STATUSES, AGENT_SLUGS, STAGE_AGENT_MAP } from '../constants.js';
 
@@ -437,6 +438,53 @@ describe('agentCharacteristicsSchema', () => {
   it('passes through unknown fields', () => {
     const chars = { tone: 'creative', customField: 'value' };
     expect(agentCharacteristicsSchema.parse(chars)).toEqual(chars);
+  });
+});
+
+describe('startRunSchema', () => {
+  it('accepts empty body (normal run)', () => {
+    expect(startRunSchema.parse({})).toEqual({});
+  });
+
+  it('accepts body with only metadata', () => {
+    const body = { metadata: { foo: 'bar' } };
+    expect(startRunSchema.parse(body)).toEqual(body);
+  });
+
+  it('accepts startFrom=research without sourceRunId', () => {
+    const body = { startFrom: 'research' };
+    expect(startRunSchema.parse(body)).toEqual(body);
+  });
+
+  it('accepts startFrom with sourceRunId', () => {
+    const body = { startFrom: 'development', sourceRunId: '550e8400-e29b-41d4-a716-446655440000' };
+    expect(startRunSchema.parse(body)).toEqual(body);
+  });
+
+  it('rejects startFrom (non-research) without sourceRunId', () => {
+    expect(() => startRunSchema.parse({ startFrom: 'development' })).toThrow(/sourceRunId/);
+  });
+
+  it('rejects invalid stage name', () => {
+    expect(() => startRunSchema.parse({ startFrom: 'marketing' })).toThrow();
+  });
+
+  it('rejects invalid sourceRunId (not uuid)', () => {
+    expect(() => startRunSchema.parse({ startFrom: 'planning', sourceRunId: 'not-a-uuid' })).toThrow();
+  });
+
+  it('accepts mockDomainPurchase flag', () => {
+    const body = { mockDomainPurchase: true };
+    expect(startRunSchema.parse(body)).toEqual(body);
+  });
+
+  it('accepts mockDomainPurchase with other fields', () => {
+    const body = { mockDomainPurchase: true, startFrom: 'development', sourceRunId: '550e8400-e29b-41d4-a716-446655440000' };
+    expect(startRunSchema.parse(body)).toEqual(body);
+  });
+
+  it('rejects non-boolean mockDomainPurchase', () => {
+    expect(() => startRunSchema.parse({ mockDomainPurchase: 'yes' })).toThrow();
   });
 });
 

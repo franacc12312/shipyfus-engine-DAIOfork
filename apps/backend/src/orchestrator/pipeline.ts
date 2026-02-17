@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { db } from '../services/db.js';
 import { env } from '../env.js';
@@ -32,6 +32,7 @@ export class PipelineOrchestrator {
   private runner: AgentRunner;
   private runId: string;
   private cancelled = false;
+  private mockDomainPurchase = false;
   private agentMap = new Map<string, string>();
 
   constructor(runId: string) {
@@ -61,13 +62,24 @@ export class PipelineOrchestrator {
       await this.updateRunStatus('running');
       await this.resolveAgents();
 
-      // Create all stage records
-      for (const stage of STAGE_ORDER) {
-        await db.from('run_stages').insert({
-          run_id: this.runId,
-          stage,
-          status: 'pending',
-        });
+      // Check run metadata for startFrom support
+      const { data: runData } = await db
+        .from('runs')
+        .select('metadata')
+        .eq('id', this.runId)
+        .single();
+
+      const metadata = (runData?.metadata as Record<string, unknown>) || {};
+      const startFrom = metadata._startFrom as string | undefined;
+      const sourceRunId = metadata._sourceRunId as string | undefined;
+      this.mockDomainPurchase = metadata._mockDomainPurchase === true;
+
+      if (startFrom && sourceRunId) {
+        await this.createStagesFromSource(startFrom, sourceRunId);
+      } else {
+        for (const stage of STAGE_ORDER) {
+          await db.from('run_stages').insert({ run_id: this.runId, stage, status: 'pending' });
+        }
       }
 
       await this.runPipelineWithRetry();
@@ -83,6 +95,98 @@ export class PipelineOrchestrator {
       }
     } finally {
       await this.runner.destroy();
+    }
+  }
+
+  private async createStagesFromSource(startFrom: string, sourceRunId: string): Promise<void> {
+    const startIdx = STAGE_ORDER.indexOf(startFrom as typeof STAGE_ORDER[number]);
+
+    const { data: sourceStages } = await db
+      .from('run_stages')
+      .select('stage, status, output_context')
+      .eq('run_id', sourceRunId);
+
+    const sourceMap = new Map(
+      (sourceStages || []).map((s: { stage: string; status: string; output_context: unknown }) => [s.stage, s]),
+    );
+
+    // Prior stages get copied from source; remaining stages start as pending
+    for (let i = 0; i < STAGE_ORDER.length; i++) {
+      const stage = STAGE_ORDER[i];
+      if (i >= startIdx) {
+        await db.from('run_stages').insert({ run_id: this.runId, stage, status: 'pending' });
+        continue;
+      }
+
+      const source = sourceMap.get(stage) as { status: string; output_context: unknown } | undefined;
+      await db.from('run_stages').insert({
+        run_id: this.runId,
+        stage,
+        status: (!source || source.status === 'skipped') ? 'skipped' : 'completed',
+        output_context: source?.output_context ?? null,
+        completed_at: new Date().toISOString(),
+      });
+    }
+
+    // Copy run-level fields (idea_summary, domain_name) from source
+    await this.copyRunFieldsFromSource(startIdx, sourceRunId);
+
+    // Copy file artifacts (PLAN.md, product files) if needed
+    await this.copySourceArtifacts(startIdx, sourceRunId);
+  }
+
+  private async copyRunFieldsFromSource(startIdx: number, sourceRunId: string): Promise<void> {
+    const ideationIdx = STAGE_ORDER.indexOf('ideation');
+    if (startIdx <= ideationIdx) return;
+
+    const { data: sourceRun } = await db
+      .from('runs')
+      .select('idea_summary, domain_name')
+      .eq('id', sourceRunId)
+      .single();
+
+    if (!sourceRun) return;
+
+    const updates: Record<string, unknown> = {};
+    if (sourceRun.idea_summary) updates.idea_summary = sourceRun.idea_summary;
+
+    const brandingIdx = STAGE_ORDER.indexOf('branding');
+    if (startIdx > brandingIdx && sourceRun.domain_name) {
+      updates.domain_name = sourceRun.domain_name;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await db.from('runs').update(updates).eq('id', this.runId);
+    }
+  }
+
+  private async copySourceArtifacts(startIdx: number, sourceRunId: string): Promise<void> {
+    const sourceDir = resolve(PRODUCTS_DIR, sourceRunId);
+    const targetDir = resolve(PRODUCTS_DIR, this.runId);
+    mkdirSync(targetDir, { recursive: true });
+
+    const devIdx = STAGE_ORDER.indexOf('development');
+    const deployIdx = STAGE_ORDER.indexOf('deployment');
+
+    // Copy PLAN.md if starting at or before development
+    if (startIdx <= devIdx) {
+      const planSrc = resolve(sourceDir, 'thoughts', 'PLAN.md');
+      if (existsSync(planSrc)) {
+        const thoughtsDir = resolve(targetDir, 'thoughts');
+        mkdirSync(thoughtsDir, { recursive: true });
+        cpSync(planSrc, resolve(thoughtsDir, 'PLAN.md'));
+      } else {
+        console.warn(`Run ${this.runId}: source PLAN.md not found at ${planSrc}`);
+      }
+    }
+
+    // Copy entire product directory if starting from deployment
+    if (startIdx === deployIdx) {
+      if (existsSync(sourceDir)) {
+        cpSync(sourceDir, targetDir, { recursive: true });
+      } else {
+        console.warn(`Run ${this.runId}: source product directory not found at ${sourceDir}`);
+      }
     }
   }
 
@@ -506,43 +610,8 @@ export class PipelineOrchestrator {
       const winner = recommendations[0];
 
       // Step 4: Purchase the domain via Porkbun (CFO action)
-      let purchaseResult = null;
-      let dnsResult = null;
-      let purchaseVerified = false;
-      let purchaseError: string | undefined;
-
-      if (env.PORKBUN_API_KEY && env.PORKBUN_API_SECRET) {
-        const porkbunConfig: PorkbunConfig = {
-          apiKey: env.PORKBUN_API_KEY,
-          apiSecret: env.PORKBUN_API_SECRET,
-        };
-
-        purchaseResult = await purchaseDomain(winner.domain, porkbunConfig);
-
-        if (purchaseResult.status === 'purchased') {
-          // Verify domain actually appears in our account
-          const verification = await verifyDomainOwnership(winner.domain, porkbunConfig);
-          if (verification.verified) {
-            purchaseVerified = true;
-            dnsResult = await configureDNSForVercel(winner.domain, porkbunConfig);
-            // Log DNS results
-            if (dnsResult.allSuccess) {
-              await this.insertLog('branding', `DNS configured for ${winner.domain} (A + CNAME)`);
-            } else {
-              const failed = dnsResult.records.filter((r) => !r.success).map((r) => r.type).join(', ');
-              await this.insertLog('branding', `WARNING: DNS partially configured — failed: ${failed}`);
-            }
-          } else {
-            purchaseError = verification.error ?? 'Domain not found in account after purchase';
-            await this.insertLog('branding', `Domain purchase verification failed for ${winner.domain}: ${purchaseError}`);
-          }
-        } else {
-          purchaseError = purchaseResult.error ?? 'Purchase failed';
-          await this.insertLog('branding', `Domain purchase failed for ${winner.domain}: ${purchaseError}`);
-        }
-      } else {
-        console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
-      }
+      const { verified: purchaseVerified, dnsConfigured, error: purchaseError } =
+        await this.executeDomainPurchase(winner.domain, winner.price);
 
       // Step 5: Run CFO agent for narration/logging (only if purchase succeeded)
       if (purchaseVerified) {
@@ -570,7 +639,7 @@ export class PipelineOrchestrator {
         strategy: winner.strategy,
         reasoning: winner.reasoning,
         purchased: purchaseVerified,
-        dnsConfigured: dnsResult?.allSuccess ?? false,
+        dnsConfigured,
         alternatives: winner.alternatives,
       };
       if (purchaseError) outputContext.purchaseError = purchaseError;
@@ -607,47 +676,55 @@ export class PipelineOrchestrator {
     return data?.[0]?.id;
   }
 
+  private async executeDomainPurchase(domain: string, price: number): Promise<{ verified: boolean; dnsConfigured: boolean; error?: string }> {
+    if (this.mockDomainPurchase) {
+      await this.insertLog('branding', `[MOCK] Domain purchase simulated for ${domain}`);
+      return { verified: true, dnsConfigured: true };
+    }
+
+    if (!env.PORKBUN_API_KEY || !env.PORKBUN_API_SECRET) {
+      console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
+      return { verified: false, dnsConfigured: false };
+    }
+
+    const porkbunConfig: PorkbunConfig = {
+      apiKey: env.PORKBUN_API_KEY,
+      apiSecret: env.PORKBUN_API_SECRET,
+    };
+
+    const purchaseResult = await purchaseDomain(domain, porkbunConfig);
+    if (purchaseResult.status !== 'purchased') {
+      const error = purchaseResult.error ?? 'Purchase failed';
+      await this.insertLog('branding', `Domain purchase failed for ${domain}: ${error}`);
+      return { verified: false, dnsConfigured: false, error };
+    }
+
+    const verification = await verifyDomainOwnership(domain, porkbunConfig);
+    if (!verification.verified) {
+      const error = verification.error ?? 'Domain not found in account after purchase';
+      await this.insertLog('branding', `Domain purchase verification failed for ${domain}: ${error}`);
+      return { verified: false, dnsConfigured: false, error };
+    }
+
+    const dnsResult = await configureDNSForVercel(domain, porkbunConfig);
+    if (dnsResult.allSuccess) {
+      await this.insertLog('branding', `DNS configured for ${domain} (A + CNAME)`);
+    } else {
+      const failed = dnsResult.records.filter((r) => !r.success).map((r) => r.type).join(', ');
+      await this.insertLog('branding', `WARNING: DNS partially configured — failed: ${failed}`);
+    }
+
+    return { verified: true, dnsConfigured: dnsResult.allSuccess };
+  }
+
   private async completeBrandingPurchase(
     chosen: DomainChoice,
     prd: ProductPRD,
     productDir: string,
   ): Promise<{ prd: ProductPRD; domainName: string | null }> {
-    // Purchase domain via Porkbun
-    let purchaseResult = null;
-    let dnsResult = null;
-    let purchaseVerified = false;
-    let purchaseError: string | undefined;
-
-    if (env.PORKBUN_API_KEY && env.PORKBUN_API_SECRET) {
-      const porkbunConfig: PorkbunConfig = {
-        apiKey: env.PORKBUN_API_KEY,
-        apiSecret: env.PORKBUN_API_SECRET,
-      };
-
-      purchaseResult = await purchaseDomain(chosen.domain, porkbunConfig);
-
-      if (purchaseResult.status === 'purchased') {
-        const verification = await verifyDomainOwnership(chosen.domain, porkbunConfig);
-        if (verification.verified) {
-          purchaseVerified = true;
-          dnsResult = await configureDNSForVercel(chosen.domain, porkbunConfig);
-          if (dnsResult.allSuccess) {
-            await this.insertLog('branding', `DNS configured for ${chosen.domain} (A + CNAME)`);
-          } else {
-            const failed = dnsResult.records.filter((r) => !r.success).map((r) => r.type).join(', ');
-            await this.insertLog('branding', `WARNING: DNS partially configured — failed: ${failed}`);
-          }
-        } else {
-          purchaseError = verification.error ?? 'Domain not found in account after purchase';
-          await this.insertLog('branding', `Domain purchase verification failed for ${chosen.domain}: ${purchaseError}`);
-        }
-      } else {
-        purchaseError = purchaseResult.error ?? 'Purchase failed';
-        await this.insertLog('branding', `Domain purchase failed for ${chosen.domain}: ${purchaseError}`);
-      }
-    } else {
-      console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
-    }
+    // Purchase domain via Porkbun (or mock)
+    const { verified: purchaseVerified, dnsConfigured, error: purchaseError } =
+      await this.executeDomainPurchase(chosen.domain, chosen.price);
 
     // Run CFO agent for narration (only if purchase succeeded)
     if (purchaseVerified) {
@@ -684,7 +761,7 @@ export class PipelineOrchestrator {
       strategy: chosen.strategy,
       reasoning: chosen.reasoning,
       purchased: purchaseVerified,
-      dnsConfigured: dnsResult?.allSuccess ?? false,
+      dnsConfigured,
     };
     if (purchaseError) mergedCtx.purchaseError = purchaseError;
 

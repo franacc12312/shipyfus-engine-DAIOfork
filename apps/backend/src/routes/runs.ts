@@ -5,7 +5,7 @@ import { db } from '../services/db.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { env } from '../env.js';
 import { startPipeline, resumePipeline, cancelPipeline, getActivePipelineCount } from '../orchestrator/pipeline.js';
-import { rejectStageSchema, departmentSchema, approveStageSchema } from '@daio/shared';
+import { rejectStageSchema, departmentSchema, approveStageSchema, startRunSchema, STAGES } from '@daio/shared';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
 
@@ -95,6 +95,69 @@ router.get('/:id/documents', async (req, res, next) => {
 
 router.post('/', requireAdmin, async (req, res, next) => {
   try {
+    // Parse and validate body
+    const parsed = startRunSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message || 'Invalid request body' });
+      return;
+    }
+
+    const { metadata = {}, startFrom, sourceRunId, mockDomainPurchase } = parsed.data;
+
+    // Block dev-only features in production
+    if (process.env.NODE_ENV === 'production') {
+      if (startFrom) {
+        res.status(403).json({ error: 'startFrom is not allowed in production' });
+        return;
+      }
+      if (mockDomainPurchase) {
+        res.status(403).json({ error: 'mockDomainPurchase is not allowed in production' });
+        return;
+      }
+    }
+
+    // Treat startFrom='research' as a normal run (research is the first stage)
+    const effectiveStartFrom = startFrom === 'research' ? undefined : startFrom;
+
+    // Validate source run exists and has completed all prior stages
+    if (effectiveStartFrom && sourceRunId) {
+      const { data: sourceRun, error: srcErr } = await db
+        .from('runs')
+        .select('id')
+        .eq('id', sourceRunId)
+        .single();
+
+      if (srcErr || !sourceRun) {
+        res.status(404).json({ error: 'Source run not found' });
+        return;
+      }
+
+      const startIdx = STAGES.indexOf(effectiveStartFrom);
+      const priorStages = STAGES.slice(0, startIdx);
+
+      const { data: sourceStages, error: stagesErr } = await db
+        .from('run_stages')
+        .select('stage, status')
+        .eq('run_id', sourceRunId)
+        .in('stage', priorStages);
+
+      if (stagesErr) throw stagesErr;
+
+      const sourceStageMap = new Map(
+        (sourceStages || []).map((s: { stage: string; status: string }) => [s.stage, s.status]),
+      );
+
+      for (const stage of priorStages) {
+        const status = sourceStageMap.get(stage);
+        if (status && status !== 'completed' && status !== 'skipped') {
+          res.status(400).json({
+            error: `Source run stage "${stage}" must be completed or skipped (current: ${status})`,
+          });
+          return;
+        }
+      }
+    }
+
     // Concurrency control
     if (getActivePipelineCount() >= MAX_CONCURRENT_RUNS) {
       res.status(429).json({
@@ -103,12 +166,18 @@ router.post('/', requireAdmin, async (req, res, next) => {
       return;
     }
 
+    const runMetadata: Record<string, unknown> = {
+      ...metadata,
+      ...(effectiveStartFrom && { _startFrom: effectiveStartFrom, _sourceRunId: sourceRunId }),
+      ...(mockDomainPurchase && { _mockDomainPurchase: true }),
+    };
+
     const { data, error } = await db
       .from('runs')
       .insert({
         status: 'queued',
         triggered_by: env.OWNER_USER_ID,
-        metadata: req.body.metadata || {},
+        metadata: runMetadata,
       })
       .select()
       .single();
