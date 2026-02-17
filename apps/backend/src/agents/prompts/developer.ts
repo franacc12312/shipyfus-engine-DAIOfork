@@ -1,13 +1,17 @@
 import type { DevelopmentConfig } from '@daio/shared';
 
 export function buildDeveloperPrompt(config: DevelopmentConfig): string {
+  const analyticsHint = config.analytics?.enabled !== false && config.analytics?.provider !== 'none'
+    ? `\n- Analytics: PostHog is pre-configured via snippet injection. If posthog-js is in the plan, initialize it in the root component.`
+    : '';
+
   return `Read and execute the plan at thoughts/PLAN.md. Follow the execution instructions exactly.
 
 ## Development Constraints
 - Language: ${config.language}
 - Framework: ${config.framework}
 - Maximum files: ${config.max_files}
-${config.custom_rules?.length ? `- Custom rules:\n${config.custom_rules.map((r) => `  - ${r}`).join('\n')}` : ''}
+${config.custom_rules?.length ? `- Custom rules:\n${config.custom_rules.map((r) => `  - ${r}`).join('\n')}` : ''}${analyticsHint}
 
 ## Instructions
 1. Read thoughts/PROGRESS.md to see where you left off

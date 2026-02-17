@@ -5,7 +5,7 @@ import { buildPlannerPrompt } from '../agents/prompts/planner.js';
 import { buildDeveloperPrompt } from '../agents/prompts/developer.js';
 import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
 import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js';
-import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD } from '@daio/shared';
+import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, AnalyticsConfig, ProductPRD } from '@daio/shared';
 import type { RawResearchData } from '@daio/research';
 
 const mockPRD: ProductPRD = {
@@ -75,6 +75,35 @@ describe('buildPlannerPrompt', () => {
     const prompt = buildPlannerPrompt(mockPRD, config);
     expect(prompt).toContain('PRODUCT COMPLETE');
   });
+
+  it('includes analytics section when analytics enabled', () => {
+    const config: PlanningConfig = { max_phases: 5, require_tests: true, max_files_per_phase: 10 };
+    const analytics: AnalyticsConfig = { enabled: true, provider: 'posthog' };
+    const prompt = buildPlannerPrompt(mockPRD, config, analytics);
+    expect(prompt).toContain('PostHog');
+    expect(prompt).toContain('posthog-js');
+    expect(prompt).toContain('posthog.capture');
+  });
+
+  it('excludes analytics section when analytics disabled', () => {
+    const config: PlanningConfig = { max_phases: 5, require_tests: true, max_files_per_phase: 10 };
+    const analytics: AnalyticsConfig = { enabled: false };
+    const prompt = buildPlannerPrompt(mockPRD, config, analytics);
+    expect(prompt).not.toContain('posthog-js');
+  });
+
+  it('excludes analytics section when provider is none', () => {
+    const config: PlanningConfig = { max_phases: 5, require_tests: true, max_files_per_phase: 10 };
+    const analytics: AnalyticsConfig = { enabled: true, provider: 'none' };
+    const prompt = buildPlannerPrompt(mockPRD, config, analytics);
+    expect(prompt).not.toContain('posthog-js');
+  });
+
+  it('includes analytics section when analytics config is undefined (default enabled)', () => {
+    const config: PlanningConfig = { max_phases: 5, require_tests: true, max_files_per_phase: 10 };
+    const prompt = buildPlannerPrompt(mockPRD, config, undefined);
+    expect(prompt).toContain('PostHog');
+  });
 });
 
 describe('buildDeveloperPrompt', () => {
@@ -96,6 +125,35 @@ describe('buildDeveloperPrompt', () => {
   it('returns non-empty string', () => {
     const config: DevelopmentConfig = { language: 'typescript', framework: 'react', max_files: 20 };
     expect(buildDeveloperPrompt(config).length).toBeGreaterThan(0);
+  });
+
+  it('includes analytics hint when analytics enabled', () => {
+    const config: DevelopmentConfig = {
+      language: 'typescript',
+      framework: 'react',
+      max_files: 20,
+      analytics: { enabled: true, provider: 'posthog' },
+    };
+    const prompt = buildDeveloperPrompt(config);
+    expect(prompt).toContain('PostHog is pre-configured');
+    expect(prompt).toContain('posthog-js');
+  });
+
+  it('excludes analytics hint when analytics disabled', () => {
+    const config: DevelopmentConfig = {
+      language: 'typescript',
+      framework: 'react',
+      max_files: 20,
+      analytics: { enabled: false },
+    };
+    const prompt = buildDeveloperPrompt(config);
+    expect(prompt).not.toContain('PostHog');
+  });
+
+  it('includes analytics hint by default (no analytics config)', () => {
+    const config: DevelopmentConfig = { language: 'typescript', framework: 'react', max_files: 20 };
+    const prompt = buildDeveloperPrompt(config);
+    expect(prompt).toContain('PostHog is pre-configured');
   });
 });
 

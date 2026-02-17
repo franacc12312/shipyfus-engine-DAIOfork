@@ -14,8 +14,9 @@ import { rankCandidates, purchaseDomain, configureDNSForVercel, verifyDomainOwne
 import { ResearchService, TavilySource, ProductHuntSource, HackerNewsSource, RedditSource } from '@daio/research';
 import type { RawResearchData, ResearchContext } from '@daio/research';
 import type { BrandCandidate, PorkbunConfig } from '@daio/brand';
-import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD, Department, HitlConfig, DomainChoice } from '@daio/shared';
+import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, AnalyticsConfig, ProductPRD, Department, HitlConfig, DomainChoice } from '@daio/shared';
 import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
+import { injectPostHogSnippet } from '../services/posthog.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
 
@@ -263,7 +264,7 @@ export class PipelineOrchestrator {
       throw new Error('Planning previously failed');
     } else {
       if (this.cancelled) return;
-      await this.runPlanning(prd, constraints.planning, productDir);
+      await this.runPlanning(prd, constraints.planning, productDir, constraints.development.analytics);
       await this.checkApprovalGate('planning');
     }
 
@@ -279,6 +280,19 @@ export class PipelineOrchestrator {
       if (this.cancelled) return;
       await this.runDevelopment(constraints.development, productDir);
       await this.checkApprovalGate('development');
+    }
+
+    // Inject PostHog analytics snippet into built product (before deployment)
+    const analyticsConfig = constraints.development.analytics;
+    let analyticsInjected = false;
+    if (analyticsConfig?.enabled !== false && analyticsConfig?.provider !== 'none' && env.POSTHOG_API_KEY) {
+      const injResult = injectPostHogSnippet(productDir, env.POSTHOG_API_KEY, env.POSTHOG_HOST);
+      analyticsInjected = injResult.injected;
+      if (injResult.injected) {
+        await this.insertLog('development', `PostHog analytics injected into: ${injResult.filesModified.join(', ')}`);
+      } else {
+        await this.insertLog('development', `Analytics skipped: ${injResult.error ?? 'unknown reason'}`);
+      }
     }
 
     // Stage 5: Deployment (no gate after — it's the last stage)
@@ -303,7 +317,7 @@ export class PipelineOrchestrator {
         await this.attachDomainToVercel(deployResult.deployUrl, deployResult.projectName, domainForDeployment);
       }
 
-      await this.registerProduct(prd, { ...deployResult, domainName: domainForDeployment }, productDir);
+      await this.registerProduct(prd, { ...deployResult, domainName: domainForDeployment, analyticsEnabled: analyticsInjected }, productDir);
     }
 
     // Mark run completed
@@ -713,11 +727,11 @@ export class PipelineOrchestrator {
     return (data?.output_context as Record<string, unknown>) ?? null;
   }
 
-  private async runPlanning(prd: ProductPRD, config: PlanningConfig, productDir: string): Promise<void> {
+  private async runPlanning(prd: ProductPRD, config: PlanningConfig, productDir: string, analytics?: AnalyticsConfig): Promise<void> {
     await this.updateStageStatus('planning', 'running');
 
     try {
-      const prompt = buildPlannerPrompt(prd, config);
+      const prompt = buildPlannerPrompt(prd, config, analytics);
       const result = await this.runner.runOnce(prompt, {
         runId: this.runId,
         stage: 'planning',
@@ -810,7 +824,7 @@ export class PipelineOrchestrator {
     }
   }
 
-  private async registerProduct(prd: ProductPRD, deployResult: { deployUrl: string | null; domainName?: string | null }, productDir: string): Promise<void> {
+  private async registerProduct(prd: ProductPRD, deployResult: { deployUrl: string | null; domainName?: string | null; analyticsEnabled?: boolean }, productDir: string): Promise<void> {
     const { data } = await db.from('products').insert({
       run_id: this.runId,
       name: prd.productName,
@@ -820,6 +834,7 @@ export class PipelineOrchestrator {
       directory_path: productDir,
       deploy_url: deployResult.deployUrl,
       domain_name: deployResult.domainName ?? null,
+      analytics_enabled: deployResult.analyticsEnabled ?? false,
       status: deployResult.deployUrl ? 'deployed' : 'built',
     }).select().single();
 
@@ -947,7 +962,10 @@ export class PipelineOrchestrator {
       ideation: map.ideation as IdeationConfig,
       branding: (map.branding ?? { max_domain_price: 15, preferred_tlds: ['xyz'] }) as BrandingConfig,
       planning: map.planning as PlanningConfig,
-      development: map.development as DevelopmentConfig,
+      development: {
+        ...(map.development as DevelopmentConfig),
+        analytics: (map.development as DevelopmentConfig)?.analytics ?? { enabled: true, provider: 'posthog' },
+      } as DevelopmentConfig,
       deployment: map.deployment as DeploymentConfig,
     };
   }

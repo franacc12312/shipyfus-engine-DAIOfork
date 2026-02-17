@@ -90,6 +90,8 @@ export interface Product {
   directory_path: string;
   deploy_url: string | null;
   domain_name: string | null;
+  analytics_enabled: boolean;
+  posthog_project_id: string | null;
   status: ProductStatus;
   created_at: string;
 }
@@ -162,12 +164,18 @@ export interface PlanningConfig {
   custom_rules?: string[];
 }
 
+export interface AnalyticsConfig {
+  enabled?: boolean;           // default: true
+  provider?: 'posthog' | 'none';  // default: 'posthog'
+}
+
 export interface DevelopmentConfig {
   framework?: string;
   language?: string;
   max_files?: number;
   max_iterations?: number;
   max_budget_usd?: number;
+  analytics?: AnalyticsConfig;
   custom_rules?: string[];
 }
 

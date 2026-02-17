@@ -35,6 +35,8 @@ const envSchema = z.object({
   PORKBUN_API_KEY: z.string().default(''),
   PORKBUN_API_SECRET: z.string().default(''),
   TAVILY_API_KEY: z.string().default(''),
+  POSTHOG_API_KEY: z.string().default(''),
+  POSTHOG_HOST: z.string().default('https://us.i.posthog.com'),
 });
 
 export const env = envSchema.parse(process.env);
