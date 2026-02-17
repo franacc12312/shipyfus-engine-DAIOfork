@@ -10,7 +10,7 @@ let mockHitlConfig: Record<string, unknown> = {
   gate_after_ideation: true,
   gate_after_branding: true,
   gate_after_planning: true,
-  gate_after_development: true,
+  gate_after_development: true, gate_after_deployment: false,
 };
 
 // Dynamic run metadata — tests can override this
@@ -117,6 +117,15 @@ vi.mock('@daio/brand', () => ({
       { type: 'CNAME', name: 'www', content: 'cname.vercel-dns.com', success: true },
     ],
     allSuccess: true,
+  }),
+}));
+
+// Mock @daio/social
+vi.mock('@daio/social', () => ({
+  postTweet: vi.fn().mockResolvedValue({
+    status: 'posted',
+    tweetId: '123456789',
+    tweetUrl: 'https://x.com/i/status/123456789',
   }),
 }));
 
@@ -229,19 +238,19 @@ describe('PipelineOrchestrator', () => {
       gate_after_ideation: true,
       gate_after_branding: true,
       gate_after_planning: true,
-      gate_after_development: true,
+      gate_after_development: true, gate_after_deployment: false,
     };
     setupDefaultMocks();
   });
 
-  it('creates run_stages for all 6 stages', async () => {
+  it('creates run_stages for all 7 stages', async () => {
     const orch = new PipelineOrchestrator('run-1');
     await orch.execute();
 
     const stageInserts = dbOps.filter((op) => op.table === 'run_stages' && op.op === 'insert');
-    expect(stageInserts).toHaveLength(6);
+    expect(stageInserts).toHaveLength(7);
     const stages = stageInserts.map((op) => op.data.stage);
-    expect(stages).toEqual(['research', 'ideation', 'branding', 'planning', 'development', 'deployment']);
+    expect(stages).toEqual(['research', 'ideation', 'branding', 'planning', 'development', 'deployment', 'distribution']);
   });
 
   it('skips research when disabled (no TAVILY_API_KEY)', async () => {
@@ -402,7 +411,7 @@ describe('PipelineOrchestrator — HITL branding', () => {
       gate_after_ideation: false,
       gate_after_branding: true,
       gate_after_planning: false,
-      gate_after_development: false,
+      gate_after_development: false, gate_after_deployment: false,
     };
 
     // Mock runOnce: ideation (1), branding prism (2), planning (3), deployment (4)
@@ -476,7 +485,7 @@ describe('PipelineOrchestrator — HITL branding', () => {
       gate_after_ideation: false,
       gate_after_branding: true,
       gate_after_planning: false,
-      gate_after_development: false,
+      gate_after_development: false, gate_after_deployment: false,
     };
 
     // Override rankCandidates to return 4 results
@@ -554,7 +563,7 @@ describe('PipelineOrchestrator — HITL branding', () => {
       gate_after_ideation: false,
       gate_after_branding: true,
       gate_after_planning: false,
-      gate_after_development: false,
+      gate_after_development: false, gate_after_deployment: false,
     };
 
     mockRunOnce
@@ -613,7 +622,7 @@ describe('PipelineOrchestrator — HITL branding', () => {
       gate_after_ideation: false,
       gate_after_branding: true,
       gate_after_planning: false,
-      gate_after_development: false,
+      gate_after_development: false, gate_after_deployment: false,
     };
 
     mockRunOnce
@@ -660,7 +669,7 @@ describe('PipelineOrchestrator — HITL branding', () => {
       gate_after_ideation: false,
       gate_after_branding: true,
       gate_after_planning: false,
-      gate_after_development: false,
+      gate_after_development: false, gate_after_deployment: false,
     };
 
     // rankCandidates returns only 2 results
@@ -707,7 +716,7 @@ describe('PipelineOrchestrator — HITL branding', () => {
       gate_after_ideation: false,
       gate_after_branding: true,
       gate_after_planning: false,
-      gate_after_development: false,
+      gate_after_development: false, gate_after_deployment: false,
     };
 
     // rankCandidates returns empty
@@ -750,7 +759,7 @@ describe('PipelineOrchestrator — HITL branding', () => {
       gate_after_ideation: true,
       gate_after_branding: true,
       gate_after_planning: true,
-      gate_after_development: true,
+      gate_after_development: true, gate_after_deployment: false,
     };
 
     setupDefaultMocks();
@@ -784,7 +793,7 @@ describe('PipelineOrchestrator — purchase failure handling', () => {
       gate_after_ideation: false,
       gate_after_branding: false,
       gate_after_planning: false,
-      gate_after_development: false,
+      gate_after_development: false, gate_after_deployment: false,
     };
 
     vi.mocked(rankCandidates).mockReset().mockResolvedValue([

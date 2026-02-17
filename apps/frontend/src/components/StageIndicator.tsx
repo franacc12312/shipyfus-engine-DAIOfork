@@ -8,6 +8,7 @@ const STAGE_LABELS: Record<string, string> = {
   planning: 'Planning',
   development: 'Development',
   deployment: 'Deployment',
+  distribution: 'Distribution',
 };
 
 interface StageIndicatorProps {

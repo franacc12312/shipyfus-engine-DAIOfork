@@ -1,6 +1,6 @@
 import type { Department, RunStatus, StageStatus } from './types.js';
 
-export const STAGES: readonly Department[] = ['research', 'ideation', 'branding', 'planning', 'development', 'deployment'] as const;
+export const STAGES: readonly Department[] = ['research', 'ideation', 'branding', 'planning', 'development', 'deployment', 'distribution'] as const;
 
 export const RUN_STATUSES: readonly RunStatus[] = ['queued', 'running', 'completed', 'failed', 'cancelled'] as const;
 
@@ -28,6 +28,7 @@ export const AGENT_SLUGS = {
   PLANNER: 'planner',
   DEVELOPER: 'developer',
   DEPLOYER: 'deployer',
+  HERALD: 'herald',
 } as const;
 
 export const STAGE_AGENT_MAP: Record<Department, string> = {
@@ -37,4 +38,5 @@ export const STAGE_AGENT_MAP: Record<Department, string> = {
   planning: 'planner',
   development: 'developer',
   deployment: 'deployer',
+  distribution: 'herald',
 } as const;

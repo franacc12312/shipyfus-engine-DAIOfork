@@ -9,12 +9,15 @@ import { buildResearcherPrompt } from '../agents/prompts/researcher.js';
 import { buildPlannerPrompt } from '../agents/prompts/planner.js';
 import { buildDeveloperPrompt } from '../agents/prompts/developer.js';
 import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
+import { buildHeraldPrompt } from '../agents/prompts/herald.js';
 import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js';
 import { rankCandidates, purchaseDomain, configureDNSForVercel, verifyDomainOwnership } from '@daio/brand';
+import { postTweet } from '@daio/social';
 import { ResearchService, TavilySource, ProductHuntSource, HackerNewsSource, RedditSource } from '@daio/research';
 import type { RawResearchData, ResearchContext } from '@daio/research';
 import type { BrandCandidate, PorkbunConfig } from '@daio/brand';
-import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, ProductPRD, Department, HitlConfig, DomainChoice } from '@daio/shared';
+import type { TwitterConfig } from '@daio/social';
+import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, DistributionConfig, ProductPRD, Department, HitlConfig, DomainChoice } from '@daio/shared';
 import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
@@ -408,6 +411,25 @@ export class PipelineOrchestrator {
       }
 
       await this.registerProduct(prd, { ...deployResult, domainName: domainForDeployment }, productDir);
+    }
+
+    // Stage 6: Distribution (optional — skipped if disabled, no Twitter creds, or no deploy URL)
+    // Read deploy_url from DB (handles resumed runs where deployment was already completed)
+    const { data: runData } = await db.from('runs').select('deploy_url').eq('id', this.runId).single();
+    const deployUrl = runData?.deploy_url as string | null;
+
+    const distStage = getStatus('distribution');
+    if (distStage?.status === 'completed') {
+      console.log(`Run ${this.runId}: skipping completed distribution`);
+    } else if (distStage?.status === 'awaiting_approval') {
+      await this.checkApprovalGate('distribution');
+    } else if (distStage?.status === 'failed') {
+      throw new Error('Distribution previously failed');
+    } else if (distStage?.status === 'skipped') {
+      console.log(`Run ${this.runId}: distribution was skipped`);
+    } else {
+      if (this.cancelled) return;
+      await this.runDistribution(prd, constraints.distribution, deployUrl, domainForDeployment, productDir);
     }
 
     // Mark run completed
@@ -887,6 +909,90 @@ export class PipelineOrchestrator {
     }
   }
 
+  private async runDistribution(
+    prd: ProductPRD,
+    config: DistributionConfig,
+    deployUrl: string | null,
+    domainName: string | null | undefined,
+    productDir: string,
+  ): Promise<void> {
+    const hasTwitterCreds = !!(env.TWITTER_API_KEY && env.TWITTER_API_SECRET && env.TWITTER_ACCESS_TOKEN && env.TWITTER_ACCESS_TOKEN_SECRET);
+
+    const skipReason = config.enabled === false ? 'Distribution is disabled'
+      : !hasTwitterCreds ? 'Twitter credentials not configured'
+      : !deployUrl ? 'No deploy URL available'
+      : null;
+
+    if (skipReason) {
+      console.log(`Run ${this.runId}: distribution skipped (${skipReason})`);
+      await this.insertLog('distribution', `${skipReason} — skipping distribution.`);
+      await this.updateStageStatus('distribution', 'skipped');
+      return;
+    }
+
+    // After skip guard, deployUrl is guaranteed non-null
+    const verifiedDeployUrl = deployUrl!;
+
+    await this.updateStageStatus('distribution', 'running');
+
+    try {
+      const prompt = buildHeraldPrompt(prd, verifiedDeployUrl, domainName, config);
+      const result = await this.runner.runOnce(prompt, {
+        runId: this.runId,
+        stage: 'distribution',
+        cwd: productDir,
+        maxBudgetUsd: 1,
+        agentId: this.agentMap.get('distribution'),
+      });
+
+      const heraldOutput = result.json as { tweet?: string; platform?: string } | null;
+      const tweetText = heraldOutput?.tweet?.trim();
+
+      if (!tweetText) {
+        throw new Error('Herald failed to generate tweet text');
+      }
+
+      if (tweetText.length > 280) {
+        await this.insertLog('distribution', `WARNING: Tweet is ${tweetText.length} chars — truncating to 280`);
+      }
+
+      const finalTweet = tweetText.slice(0, 280);
+      await this.insertLog('distribution', `Herald drafted: "${finalTweet}"`);
+
+      const twitterConfig: TwitterConfig = {
+        apiKey: env.TWITTER_API_KEY,
+        apiSecret: env.TWITTER_API_SECRET,
+        accessToken: env.TWITTER_ACCESS_TOKEN,
+        accessTokenSecret: env.TWITTER_ACCESS_TOKEN_SECRET,
+      };
+
+      const tweetResult = await postTweet(finalTweet, twitterConfig);
+
+      const outputContext: Record<string, unknown> = {
+        tweet: finalTweet,
+        platform: 'twitter',
+        tweetResult,
+      };
+
+      if (tweetResult.status === 'posted') {
+        await this.insertLog('distribution', `Tweet posted successfully! ${tweetResult.tweetUrl ?? ''}`);
+      } else {
+        await this.insertLog('distribution', `Tweet posting failed: ${tweetResult.error}`);
+        outputContext.postError = tweetResult.error;
+      }
+
+      await db.from('run_stages').update({
+        status: 'completed',
+        output_context: outputContext,
+        cost_usd: result.cost,
+        completed_at: new Date().toISOString(),
+      }).eq('run_id', this.runId).eq('stage', 'distribution');
+    } catch (err) {
+      if (!this.cancelled) await this.updateStageStatus('distribution', 'failed');
+      throw err;
+    }
+  }
+
   private async registerProduct(prd: ProductPRD, deployResult: { deployUrl: string | null; domainName?: string | null }, productDir: string): Promise<void> {
     const { data } = await db.from('products').insert({
       run_id: this.runId,
@@ -1026,6 +1132,7 @@ export class PipelineOrchestrator {
       planning: map.planning as PlanningConfig,
       development: map.development as DevelopmentConfig,
       deployment: map.deployment as DeploymentConfig,
+      distribution: (map.distribution ?? { enabled: true }) as DistributionConfig,
     };
   }
 
