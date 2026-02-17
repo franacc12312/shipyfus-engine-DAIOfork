@@ -318,14 +318,13 @@ export class PipelineOrchestrator {
     if (distStage?.status === 'completed') {
       console.log(`Run ${this.runId}: skipping completed distribution`);
     } else if (distStage?.status === 'awaiting_approval') {
-      await this.checkApprovalGate('deployment');
+      await this.checkApprovalGate('distribution');
     } else if (distStage?.status === 'failed') {
       throw new Error('Distribution previously failed');
     } else if (distStage?.status === 'skipped') {
       console.log(`Run ${this.runId}: distribution was skipped`);
     } else {
       if (this.cancelled) return;
-      await this.checkApprovalGate('deployment');
       await this.runDistribution(prd, constraints.distribution, deployUrl, domainForDeployment, productDir);
     }
 
@@ -840,35 +839,27 @@ export class PipelineOrchestrator {
     domainName: string | null | undefined,
     productDir: string,
   ): Promise<void> {
-    // Skip conditions
     const hasTwitterCreds = !!(env.TWITTER_API_KEY && env.TWITTER_API_SECRET && env.TWITTER_ACCESS_TOKEN && env.TWITTER_ACCESS_TOKEN_SECRET);
 
-    if (config.enabled === false) {
-      console.log(`Run ${this.runId}: distribution skipped (disabled)`);
-      await this.insertLog('distribution', 'Distribution is disabled — skipping.');
+    const skipReason = config.enabled === false ? 'Distribution is disabled'
+      : !hasTwitterCreds ? 'Twitter credentials not configured'
+      : !deployUrl ? 'No deploy URL available'
+      : null;
+
+    if (skipReason) {
+      console.log(`Run ${this.runId}: distribution skipped (${skipReason})`);
+      await this.insertLog('distribution', `${skipReason} — skipping distribution.`);
       await this.updateStageStatus('distribution', 'skipped');
       return;
     }
 
-    if (!hasTwitterCreds) {
-      console.log(`Run ${this.runId}: distribution skipped (no Twitter credentials)`);
-      await this.insertLog('distribution', 'Twitter credentials not configured — skipping distribution.');
-      await this.updateStageStatus('distribution', 'skipped');
-      return;
-    }
-
-    if (!deployUrl) {
-      console.log(`Run ${this.runId}: distribution skipped (no deploy URL)`);
-      await this.insertLog('distribution', 'No deploy URL available — skipping distribution.');
-      await this.updateStageStatus('distribution', 'skipped');
-      return;
-    }
+    // After skip guard, deployUrl is guaranteed non-null
+    const verifiedDeployUrl = deployUrl!;
 
     await this.updateStageStatus('distribution', 'running');
 
     try {
-      // Step 1: Herald generates the tweet copy
-      const prompt = buildHeraldPrompt(prd, deployUrl, domainName, config);
+      const prompt = buildHeraldPrompt(prd, verifiedDeployUrl, domainName, config);
       const result = await this.runner.runOnce(prompt, {
         runId: this.runId,
         stage: 'distribution',
@@ -891,7 +882,6 @@ export class PipelineOrchestrator {
       const finalTweet = tweetText.slice(0, 280);
       await this.insertLog('distribution', `Herald drafted: "${finalTweet}"`);
 
-      // Step 2: Post to Twitter via @daio/social
       const twitterConfig: TwitterConfig = {
         apiKey: env.TWITTER_API_KEY,
         apiSecret: env.TWITTER_API_SECRET,
@@ -904,7 +894,7 @@ export class PipelineOrchestrator {
       const outputContext: Record<string, unknown> = {
         tweet: finalTweet,
         platform: 'twitter',
-        tweetResult: tweetResult,
+        tweetResult,
       };
 
       if (tweetResult.status === 'posted') {

@@ -8,6 +8,10 @@ export function buildHeraldPrompt(
 ): string {
   const url = domainName ? `https://${domainName}` : deployUrl;
 
+  const customRulesBlock = config?.custom_rules?.length
+    ? `- Custom rules:\n${config.custom_rules.map((r) => `  - ${r}`).join('\n')}\n`
+    : '';
+
   return `Write a launch announcement tweet for this product.
 
 ## Product Details
@@ -24,8 +28,7 @@ export function buildHeraldPrompt(
 - Include the URL at the end
 - Make it engaging and launch-worthy — this is a product announcement
 - Do NOT use hashtags
-${config?.custom_rules?.length ? `- Custom rules:\n${config.custom_rules.map((r) => `  - ${r}`).join('\n')}` : ''}
-
+${customRulesBlock}
 ## Output Format
 Return ONLY a JSON block:
 

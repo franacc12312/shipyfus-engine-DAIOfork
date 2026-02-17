@@ -17,17 +17,11 @@ function buildOAuthSignature(
   params: Record<string, string>,
   config: TwitterConfig,
 ): string {
-  // Sort params alphabetically and build parameter string
   const sortedKeys = Object.keys(params).sort();
   const paramString = sortedKeys.map((k) => `${percentEncode(k)}=${percentEncode(params[k])}`).join('&');
-
-  // Build signature base string
   const baseString = `${method.toUpperCase()}&${percentEncode(url)}&${percentEncode(paramString)}`;
-
-  // Build signing key
   const signingKey = `${percentEncode(config.apiSecret)}&${percentEncode(config.accessTokenSecret)}`;
 
-  // HMAC-SHA1
   return createHmac('sha1', signingKey).update(baseString).digest('base64');
 }
 
@@ -74,21 +68,19 @@ export async function postTweet(text: string, config: TwitterConfig): Promise<Tw
   });
 
   if (!res.ok) {
+    if (res.status === 429) {
+      return { status: 'failed', error: 'Rate limited — try again later' };
+    }
+
     const errorText = await res.text();
     let errorMsg = `Twitter API error (${res.status})`;
 
-    // Parse known error structures
     try {
       const parsed = JSON.parse(errorText);
       if (parsed.detail) errorMsg = parsed.detail;
       else if (parsed.errors?.[0]?.message) errorMsg = parsed.errors[0].message;
     } catch {
       if (errorText) errorMsg = errorText;
-    }
-
-    // Rate limit detection
-    if (res.status === 429) {
-      return { status: 'failed', error: 'Rate limited — try again later' };
     }
 
     return { status: 'failed', error: errorMsg };
