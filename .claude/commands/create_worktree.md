@@ -50,12 +50,13 @@ The user provides a Linear issue identifier: $ARGUMENTS
 
     Update `apps/frontend/.env` in the worktree:
     - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
-12. **Seed the branch and update registry:**
-    Migrations are auto-applied by Supabase branching. Seed data is not — apply it:
+12. **Seed the branch database so it's immediately usable:**
+    Migrations are auto-applied by Supabase branching, but seed data is not. The branch database is empty and unusable without seeding — always run this step:
     ```bash
     psql "$POSTGRES_URL_NON_POOLING" -f supabase/seed.sql
     ```
-    If seeding fails, warn but continue (non-fatal).
+    This populates the required default data (users, constraints, etc.) so the app works out of the box.
+    If seeding fails, **do not silently continue** — show the error, try once more, and if it still fails, warn the user that the branch DB may not be usable and they should seed manually.
 
     Update the worktree's entry in `.worktrees/ports.json` to include branch info:
     ```json
