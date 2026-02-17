@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-const BASE_URL = 'http://localhost:3001/api';
+const BASE_URL = process.env.TEST_API_BASE_URL || 'http://localhost:3001/api';
 const ADMIN_TOKEN = 'daio-admin-v1';
 
 function authHeaders() {

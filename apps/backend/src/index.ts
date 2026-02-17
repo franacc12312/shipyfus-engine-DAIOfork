@@ -46,9 +46,11 @@ async function resumeOrphanedRuns() {
 
 app.listen(env.PORT, () => {
   console.log(`DAIO backend listening on port ${env.PORT}`);
-  resumeOrphanedRuns().catch((err) => {
-    console.error('Failed to resume orphaned runs:', err);
-  });
+  if (!process.env.SKIP_ORPHAN_RESUME) {
+    resumeOrphanedRuns().catch((err) => {
+      console.error('Failed to resume orphaned runs:', err);
+    });
+  }
 });
 
 export { app };
