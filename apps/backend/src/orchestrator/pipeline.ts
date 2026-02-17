@@ -19,6 +19,20 @@ import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '..
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
 
+function buildStubHtml(productName: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${productName}</title>
+</head>
+<body>
+  <h1>${productName}</h1>
+</body>
+</html>`;
+}
+
 export class RetryStageError extends Error {
   stage: string;
   constructor(stage: string) {
@@ -820,19 +834,7 @@ export class PipelineOrchestrator {
 
     if (config.enabled === false) {
       await this.insertLog('development', `Stub mode: generating minimal index.html for "${productName}"`);
-      const stubHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${productName}</title>
-</head>
-<body>
-  <h1>${productName}</h1>
-</body>
-</html>`;
-      mkdirSync(productDir, { recursive: true });
-      writeFileSync(resolve(productDir, 'index.html'), stubHtml);
+      writeFileSync(resolve(productDir, 'index.html'), buildStubHtml(productName));
       await db.from('run_stages').update({
         status: 'completed',
         iteration: 0,
