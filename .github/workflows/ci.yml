@@ -59,11 +59,54 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Install Supabase CLI
+        run: npm install -g supabase
+
+      - name: Resolve Supabase branch database
+        id: supabase-branch
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          # Extract Linear issue ID (e.g., "dai-44") from the PR branch name
+          BRANCH_NAME="${{ github.head_ref || github.ref_name }}"
+          ISSUE_ID=$(echo "$BRANCH_NAME" | grep -oP 'dai-\d+' || true)
+
+          if [ -z "$ISSUE_ID" ]; then
+            echo "No issue ID found in branch name, using main database"
+            echo "found=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Looking for Supabase branch matching issue $ISSUE_ID..."
+
+          # List all branches and find one matching the issue ID
+          BRANCHES_JSON=$(supabase branches list --project-ref yxwkvbvbugknxdrvpzlq -o json 2>/dev/null || echo "[]")
+          MATCH=$(echo "$BRANCHES_JSON" | jq -r ".[] | select(.name | startswith(\"$ISSUE_ID\")) | .name" | head -1)
+
+          if [ -z "$MATCH" ]; then
+            echo "No Supabase branch found for $ISSUE_ID, using main database"
+            echo "found=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Found Supabase branch: $MATCH"
+
+          # Get branch credentials
+          BRANCH_ENV=$(supabase branches get "$MATCH" --project-ref yxwkvbvbugknxdrvpzlq -o env)
+          BRANCH_SUPABASE_URL=$(echo "$BRANCH_ENV" | grep '^SUPABASE_URL=' | cut -d= -f2-)
+          BRANCH_SERVICE_KEY=$(echo "$BRANCH_ENV" | grep '^SUPABASE_SERVICE_ROLE_KEY=' | cut -d= -f2-)
+
+          echo "found=true" >> $GITHUB_OUTPUT
+          echo "supabase_url=$BRANCH_SUPABASE_URL" >> $GITHUB_OUTPUT
+          # Mask and set service key
+          echo "::add-mask::$BRANCH_SERVICE_KEY"
+          echo "service_role_key=$BRANCH_SERVICE_KEY" >> $GITHUB_OUTPUT
+
       - name: Build backend
         run: pnpm --filter @daio/backend build
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: ${{ steps.supabase-branch.outputs.found == 'true' && steps.supabase-branch.outputs.supabase_url || secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase-branch.outputs.found == 'true' && steps.supabase-branch.outputs.service_role_key || secrets.SUPABASE_SERVICE_ROLE_KEY }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           OWNER_USER_ID: ${{ secrets.OWNER_USER_ID }}
 
@@ -72,8 +115,8 @@ jobs:
           pnpm --filter @daio/backend start > /tmp/server.log 2>&1 &
           echo "SERVER_PID=$!" >> $GITHUB_ENV
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: ${{ steps.supabase-branch.outputs.found == 'true' && steps.supabase-branch.outputs.supabase_url || secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.supabase-branch.outputs.found == 'true' && steps.supabase-branch.outputs.service_role_key || secrets.SUPABASE_SERVICE_ROLE_KEY }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           OWNER_USER_ID: ${{ secrets.OWNER_USER_ID }}
           SKIP_ORPHAN_RESUME: "true"
