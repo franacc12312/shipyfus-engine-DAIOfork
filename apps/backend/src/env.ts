@@ -37,6 +37,10 @@ const envSchema = z.object({
   TAVILY_API_KEY: z.string().default(''),
   POSTHOG_API_KEY: z.string().default(''),
   POSTHOG_HOST: z.string().default('https://us.i.posthog.com'),
+  TWITTER_API_KEY: z.string().default(''),
+  TWITTER_API_SECRET: z.string().default(''),
+  TWITTER_ACCESS_TOKEN: z.string().default(''),
+  TWITTER_ACCESS_TOKEN_SECRET: z.string().default(''),
 });
 
 export const env = envSchema.parse(process.env);

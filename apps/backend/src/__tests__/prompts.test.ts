@@ -5,7 +5,8 @@ import { buildPlannerPrompt } from '../agents/prompts/planner.js';
 import { buildDeveloperPrompt } from '../agents/prompts/developer.js';
 import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
 import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js';
-import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, AnalyticsConfig, ProductPRD } from '@daio/shared';
+import { buildHeraldPrompt } from '../agents/prompts/herald.js';
+import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, AnalyticsConfig, DistributionConfig, ProductPRD } from '@daio/shared';
 import type { RawResearchData } from '@daio/research';
 
 const mockPRD: ProductPRD = {
@@ -326,5 +327,34 @@ describe('buildResearcherPrompt', () => {
   it('returns non-empty string', () => {
     const config: ResearchConfig = { enabled: true };
     expect(buildResearcherPrompt(mockRawData, config).length).toBeGreaterThan(0);
+  });
+});
+
+describe('buildHeraldPrompt', () => {
+  it('includes product name and deploy URL', () => {
+    const prompt = buildHeraldPrompt(mockPRD, 'https://test.vercel.app');
+    expect(prompt).toContain('TestApp');
+    expect(prompt).toContain('https://test.vercel.app');
+  });
+
+  it('uses domain name instead of deploy URL when provided', () => {
+    const prompt = buildHeraldPrompt(mockPRD, 'https://test.vercel.app', 'testapp.xyz');
+    expect(prompt).toContain('https://testapp.xyz');
+    expect(prompt).not.toContain('https://test.vercel.app');
+  });
+
+  it('includes 280 character limit requirement', () => {
+    const prompt = buildHeraldPrompt(mockPRD, 'https://test.vercel.app');
+    expect(prompt).toContain('280');
+  });
+
+  it('includes custom rules when provided', () => {
+    const config: DistributionConfig = {
+      enabled: true,
+      custom_rules: ['Use formal tone', 'Mention AI'],
+    };
+    const prompt = buildHeraldPrompt(mockPRD, 'https://test.vercel.app', null, config);
+    expect(prompt).toContain('Use formal tone');
+    expect(prompt).toContain('Mention AI');
   });
 });

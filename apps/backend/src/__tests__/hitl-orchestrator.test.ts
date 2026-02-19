@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const dbOps: { table: string; op: string; data?: any; filters?: any }[] = [];
 
 // Configurable mock responses
-let hitlConfig = { enabled: false, gate_after_research: true, gate_after_ideation: true, gate_after_branding: true, gate_after_planning: true, gate_after_development: true };
+let hitlConfig = { enabled: false, gate_after_research: true, gate_after_ideation: true, gate_after_branding: true, gate_after_planning: true, gate_after_development: true, gate_after_deployment: false };
 let stageStatusResponses: Record<string, string> = {};
 let pollCount = 0;
 
@@ -116,6 +116,10 @@ vi.mock('../env.js', () => ({
   },
 }));
 
+vi.mock('@daio/social', () => ({
+  postTweet: vi.fn().mockResolvedValue({ status: 'posted', tweetId: '1', tweetUrl: 'https://x.com/i/status/1' }),
+}));
+
 vi.mock('@daio/research', () => ({
   ResearchService: vi.fn().mockImplementation(() => ({
     addSource: vi.fn(),
@@ -153,7 +157,7 @@ describe('checkApprovalGate', () => {
     vi.clearAllMocks();
     dbOps.length = 0;
     pollCount = 0;
-    hitlConfig = { enabled: false, gate_after_research: true, gate_after_ideation: true, gate_after_branding: true, gate_after_planning: true, gate_after_development: true };
+    hitlConfig = { enabled: false, gate_after_research: true, gate_after_ideation: true, gate_after_branding: true, gate_after_planning: true, gate_after_development: true, gate_after_deployment: false };
     stageStatusResponses = {};
   });
 

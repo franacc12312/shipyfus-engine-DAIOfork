@@ -13,6 +13,7 @@ export const STAGE_DEFINITIONS: Record<string, StageDefinition> = {
   planning: { name: 'planning', mode: 'oneshot', order: 3 },
   development: { name: 'development', mode: 'loop', order: 4 },
   deployment: { name: 'deployment', mode: 'oneshot', order: 5 },
+  distribution: { name: 'distribution', mode: 'oneshot', order: 6 },
 };
 
-export const STAGE_ORDER = ['research', 'ideation', 'branding', 'planning', 'development', 'deployment'] as const;
+export const STAGE_ORDER = ['research', 'ideation', 'branding', 'planning', 'development', 'deployment', 'distribution'] as const;

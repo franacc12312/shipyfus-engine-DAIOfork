@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { db } from '../services/db.js';
 import { env } from '../env.js';
@@ -9,16 +9,33 @@ import { buildResearcherPrompt } from '../agents/prompts/researcher.js';
 import { buildPlannerPrompt } from '../agents/prompts/planner.js';
 import { buildDeveloperPrompt } from '../agents/prompts/developer.js';
 import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
+import { buildHeraldPrompt } from '../agents/prompts/herald.js';
 import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js';
 import { rankCandidates, purchaseDomain, configureDNSForVercel, verifyDomainOwnership } from '@daio/brand';
+import { postTweet } from '@daio/social';
 import { ResearchService, TavilySource, ProductHuntSource, HackerNewsSource, RedditSource } from '@daio/research';
 import type { RawResearchData, ResearchContext } from '@daio/research';
 import type { BrandCandidate, PorkbunConfig } from '@daio/brand';
-import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, AnalyticsConfig, ProductPRD, Department, HitlConfig, DomainChoice } from '@daio/shared';
+import type { TwitterConfig } from '@daio/social';
+import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, DistributionConfig, AnalyticsConfig, ProductPRD, Department, HitlConfig, DomainChoice } from '@daio/shared';
 import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
 import { injectPostHogSnippet } from '../services/posthog.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
+
+function buildStubHtml(productName: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${productName}</title>
+</head>
+<body>
+  <h1>${productName}</h1>
+</body>
+</html>`;
+}
 
 export class RetryStageError extends Error {
   stage: string;
@@ -33,6 +50,7 @@ export class PipelineOrchestrator {
   private runner: AgentRunner;
   private runId: string;
   private cancelled = false;
+  private mockDomainPurchase = false;
   private agentMap = new Map<string, string>();
 
   constructor(runId: string) {
@@ -72,6 +90,7 @@ export class PipelineOrchestrator {
       const metadata = (runData?.metadata as Record<string, unknown>) || {};
       const startFrom = metadata._startFrom as string | undefined;
       const sourceRunId = metadata._sourceRunId as string | undefined;
+      this.mockDomainPurchase = metadata._mockDomainPurchase === true;
 
       if (startFrom && sourceRunId) {
         await this.createStagesFromSource(startFrom, sourceRunId);
@@ -380,7 +399,7 @@ export class PipelineOrchestrator {
       throw new Error('Development previously failed');
     } else {
       if (this.cancelled) return;
-      await this.runDevelopment(constraints.development, productDir);
+      await this.runDevelopment(constraints.development, productDir, prd.productName);
       await this.checkApprovalGate('development');
     }
 
@@ -420,6 +439,25 @@ export class PipelineOrchestrator {
       }
 
       await this.registerProduct(prd, { ...deployResult, domainName: domainForDeployment, analyticsEnabled: analyticsInjected }, productDir);
+    }
+
+    // Stage 6: Distribution (optional — skipped if disabled, no Twitter creds, or no deploy URL)
+    // Read deploy_url from DB (handles resumed runs where deployment was already completed)
+    const { data: runData } = await db.from('runs').select('deploy_url').eq('id', this.runId).single();
+    const deployUrl = runData?.deploy_url as string | null;
+
+    const distStage = getStatus('distribution');
+    if (distStage?.status === 'completed') {
+      console.log(`Run ${this.runId}: skipping completed distribution`);
+    } else if (distStage?.status === 'awaiting_approval') {
+      await this.checkApprovalGate('distribution');
+    } else if (distStage?.status === 'failed') {
+      throw new Error('Distribution previously failed');
+    } else if (distStage?.status === 'skipped') {
+      console.log(`Run ${this.runId}: distribution was skipped`);
+    } else {
+      if (this.cancelled) return;
+      await this.runDistribution(prd, constraints.distribution, deployUrl, domainForDeployment, productDir);
     }
 
     // Mark run completed
@@ -622,43 +660,8 @@ export class PipelineOrchestrator {
       const winner = recommendations[0];
 
       // Step 4: Purchase the domain via Porkbun (CFO action)
-      let purchaseResult = null;
-      let dnsResult = null;
-      let purchaseVerified = false;
-      let purchaseError: string | undefined;
-
-      if (env.PORKBUN_API_KEY && env.PORKBUN_API_SECRET) {
-        const porkbunConfig: PorkbunConfig = {
-          apiKey: env.PORKBUN_API_KEY,
-          apiSecret: env.PORKBUN_API_SECRET,
-        };
-
-        purchaseResult = await purchaseDomain(winner.domain, porkbunConfig);
-
-        if (purchaseResult.status === 'purchased') {
-          // Verify domain actually appears in our account
-          const verification = await verifyDomainOwnership(winner.domain, porkbunConfig);
-          if (verification.verified) {
-            purchaseVerified = true;
-            dnsResult = await configureDNSForVercel(winner.domain, porkbunConfig);
-            // Log DNS results
-            if (dnsResult.allSuccess) {
-              await this.insertLog('branding', `DNS configured for ${winner.domain} (A + CNAME)`);
-            } else {
-              const failed = dnsResult.records.filter((r) => !r.success).map((r) => r.type).join(', ');
-              await this.insertLog('branding', `WARNING: DNS partially configured — failed: ${failed}`);
-            }
-          } else {
-            purchaseError = verification.error ?? 'Domain not found in account after purchase';
-            await this.insertLog('branding', `Domain purchase verification failed for ${winner.domain}: ${purchaseError}`);
-          }
-        } else {
-          purchaseError = purchaseResult.error ?? 'Purchase failed';
-          await this.insertLog('branding', `Domain purchase failed for ${winner.domain}: ${purchaseError}`);
-        }
-      } else {
-        console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
-      }
+      const { verified: purchaseVerified, dnsConfigured, error: purchaseError } =
+        await this.executeDomainPurchase(winner.domain, winner.price);
 
       // Step 5: Run CFO agent for narration/logging (only if purchase succeeded)
       if (purchaseVerified) {
@@ -686,7 +689,7 @@ export class PipelineOrchestrator {
         strategy: winner.strategy,
         reasoning: winner.reasoning,
         purchased: purchaseVerified,
-        dnsConfigured: dnsResult?.allSuccess ?? false,
+        dnsConfigured,
         alternatives: winner.alternatives,
       };
       if (purchaseError) outputContext.purchaseError = purchaseError;
@@ -723,47 +726,55 @@ export class PipelineOrchestrator {
     return data?.[0]?.id;
   }
 
+  private async executeDomainPurchase(domain: string, price: number): Promise<{ verified: boolean; dnsConfigured: boolean; error?: string }> {
+    if (this.mockDomainPurchase) {
+      await this.insertLog('branding', `[MOCK] Domain purchase simulated for ${domain}`);
+      return { verified: true, dnsConfigured: true };
+    }
+
+    if (!env.PORKBUN_API_KEY || !env.PORKBUN_API_SECRET) {
+      console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
+      return { verified: false, dnsConfigured: false };
+    }
+
+    const porkbunConfig: PorkbunConfig = {
+      apiKey: env.PORKBUN_API_KEY,
+      apiSecret: env.PORKBUN_API_SECRET,
+    };
+
+    const purchaseResult = await purchaseDomain(domain, porkbunConfig);
+    if (purchaseResult.status !== 'purchased') {
+      const error = purchaseResult.error ?? 'Purchase failed';
+      await this.insertLog('branding', `Domain purchase failed for ${domain}: ${error}`);
+      return { verified: false, dnsConfigured: false, error };
+    }
+
+    const verification = await verifyDomainOwnership(domain, porkbunConfig);
+    if (!verification.verified) {
+      const error = verification.error ?? 'Domain not found in account after purchase';
+      await this.insertLog('branding', `Domain purchase verification failed for ${domain}: ${error}`);
+      return { verified: false, dnsConfigured: false, error };
+    }
+
+    const dnsResult = await configureDNSForVercel(domain, porkbunConfig);
+    if (dnsResult.allSuccess) {
+      await this.insertLog('branding', `DNS configured for ${domain} (A + CNAME)`);
+    } else {
+      const failed = dnsResult.records.filter((r) => !r.success).map((r) => r.type).join(', ');
+      await this.insertLog('branding', `WARNING: DNS partially configured — failed: ${failed}`);
+    }
+
+    return { verified: true, dnsConfigured: dnsResult.allSuccess };
+  }
+
   private async completeBrandingPurchase(
     chosen: DomainChoice,
     prd: ProductPRD,
     productDir: string,
   ): Promise<{ prd: ProductPRD; domainName: string | null }> {
-    // Purchase domain via Porkbun
-    let purchaseResult = null;
-    let dnsResult = null;
-    let purchaseVerified = false;
-    let purchaseError: string | undefined;
-
-    if (env.PORKBUN_API_KEY && env.PORKBUN_API_SECRET) {
-      const porkbunConfig: PorkbunConfig = {
-        apiKey: env.PORKBUN_API_KEY,
-        apiSecret: env.PORKBUN_API_SECRET,
-      };
-
-      purchaseResult = await purchaseDomain(chosen.domain, porkbunConfig);
-
-      if (purchaseResult.status === 'purchased') {
-        const verification = await verifyDomainOwnership(chosen.domain, porkbunConfig);
-        if (verification.verified) {
-          purchaseVerified = true;
-          dnsResult = await configureDNSForVercel(chosen.domain, porkbunConfig);
-          if (dnsResult.allSuccess) {
-            await this.insertLog('branding', `DNS configured for ${chosen.domain} (A + CNAME)`);
-          } else {
-            const failed = dnsResult.records.filter((r) => !r.success).map((r) => r.type).join(', ');
-            await this.insertLog('branding', `WARNING: DNS partially configured — failed: ${failed}`);
-          }
-        } else {
-          purchaseError = verification.error ?? 'Domain not found in account after purchase';
-          await this.insertLog('branding', `Domain purchase verification failed for ${chosen.domain}: ${purchaseError}`);
-        }
-      } else {
-        purchaseError = purchaseResult.error ?? 'Purchase failed';
-        await this.insertLog('branding', `Domain purchase failed for ${chosen.domain}: ${purchaseError}`);
-      }
-    } else {
-      console.warn(`Run ${this.runId}: Porkbun API keys not configured — skipping domain purchase`);
-    }
+    // Purchase domain via Porkbun (or mock)
+    const { verified: purchaseVerified, dnsConfigured, error: purchaseError } =
+      await this.executeDomainPurchase(chosen.domain, chosen.price);
 
     // Run CFO agent for narration (only if purchase succeeded)
     if (purchaseVerified) {
@@ -800,7 +811,7 @@ export class PipelineOrchestrator {
       strategy: chosen.strategy,
       reasoning: chosen.reasoning,
       purchased: purchaseVerified,
-      dnsConfigured: dnsResult?.allSuccess ?? false,
+      dnsConfigured,
     };
     if (purchaseError) mergedCtx.purchaseError = purchaseError;
 
@@ -854,8 +865,20 @@ export class PipelineOrchestrator {
     }
   }
 
-  private async runDevelopment(config: DevelopmentConfig, productDir: string): Promise<{ iterations: number; completed: boolean }> {
+  private async runDevelopment(config: DevelopmentConfig, productDir: string, productName: string): Promise<{ iterations: number; completed: boolean }> {
     await this.updateStageStatus('development', 'running');
+
+    if (config.enabled === false) {
+      await this.insertLog('development', `Stub mode: generating minimal index.html for "${productName}"`);
+      writeFileSync(resolve(productDir, 'index.html'), buildStubHtml(productName));
+      await db.from('run_stages').update({
+        status: 'completed',
+        iteration: 0,
+        cost_usd: 0,
+        completed_at: new Date().toISOString(),
+      }).eq('run_id', this.runId).eq('stage', 'development');
+      return { iterations: 0, completed: true };
+    }
 
     try {
       const prompt = buildDeveloperPrompt(config);
@@ -922,6 +945,90 @@ export class PipelineOrchestrator {
       return { deployUrl, projectName };
     } catch (err) {
       if (!this.cancelled) await this.updateStageStatus('deployment', 'failed');
+      throw err;
+    }
+  }
+
+  private async runDistribution(
+    prd: ProductPRD,
+    config: DistributionConfig,
+    deployUrl: string | null,
+    domainName: string | null | undefined,
+    productDir: string,
+  ): Promise<void> {
+    const hasTwitterCreds = !!(env.TWITTER_API_KEY && env.TWITTER_API_SECRET && env.TWITTER_ACCESS_TOKEN && env.TWITTER_ACCESS_TOKEN_SECRET);
+
+    const skipReason = config.enabled === false ? 'Distribution is disabled'
+      : !hasTwitterCreds ? 'Twitter credentials not configured'
+      : !deployUrl ? 'No deploy URL available'
+      : null;
+
+    if (skipReason) {
+      console.log(`Run ${this.runId}: distribution skipped (${skipReason})`);
+      await this.insertLog('distribution', `${skipReason} — skipping distribution.`);
+      await this.updateStageStatus('distribution', 'skipped');
+      return;
+    }
+
+    // After skip guard, deployUrl is guaranteed non-null
+    const verifiedDeployUrl = deployUrl!;
+
+    await this.updateStageStatus('distribution', 'running');
+
+    try {
+      const prompt = buildHeraldPrompt(prd, verifiedDeployUrl, domainName, config);
+      const result = await this.runner.runOnce(prompt, {
+        runId: this.runId,
+        stage: 'distribution',
+        cwd: productDir,
+        maxBudgetUsd: 1,
+        agentId: this.agentMap.get('distribution'),
+      });
+
+      const heraldOutput = result.json as { tweet?: string; platform?: string } | null;
+      const tweetText = heraldOutput?.tweet?.trim();
+
+      if (!tweetText) {
+        throw new Error('Herald failed to generate tweet text');
+      }
+
+      if (tweetText.length > 280) {
+        await this.insertLog('distribution', `WARNING: Tweet is ${tweetText.length} chars — truncating to 280`);
+      }
+
+      const finalTweet = tweetText.slice(0, 280);
+      await this.insertLog('distribution', `Herald drafted: "${finalTweet}"`);
+
+      const twitterConfig: TwitterConfig = {
+        apiKey: env.TWITTER_API_KEY,
+        apiSecret: env.TWITTER_API_SECRET,
+        accessToken: env.TWITTER_ACCESS_TOKEN,
+        accessTokenSecret: env.TWITTER_ACCESS_TOKEN_SECRET,
+      };
+
+      const tweetResult = await postTweet(finalTweet, twitterConfig);
+
+      const outputContext: Record<string, unknown> = {
+        tweet: finalTweet,
+        platform: 'twitter',
+        tweetResult,
+      };
+
+      if (tweetResult.status === 'posted') {
+        await this.insertLog('distribution', `Tweet posted successfully! ${tweetResult.tweetUrl ?? ''}`);
+      } else {
+        await this.insertLog('distribution', `Tweet posting failed: ${tweetResult.error}`);
+        outputContext.postError = tweetResult.error;
+      }
+
+      await db.from('run_stages').update({
+        status: 'completed',
+        output_context: outputContext,
+        cost_usd: result.cost,
+        completed_at: new Date().toISOString(),
+      }).eq('run_id', this.runId).eq('stage', 'distribution');
+    } catch (err) {
+      if (!this.cancelled) await this.updateStageStatus('distribution', 'failed');
       throw err;
     }
   }
@@ -1069,6 +1176,7 @@ export class PipelineOrchestrator {
         analytics: (map.development as DevelopmentConfig)?.analytics ?? { enabled: true, provider: 'posthog' },
       } as DevelopmentConfig,
       deployment: map.deployment as DeploymentConfig,
+      distribution: (map.distribution ?? { enabled: true }) as DistributionConfig,
     };
   }
 

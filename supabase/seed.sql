@@ -31,4 +31,8 @@ insert into public.constraints (department, config, updated_by) values
     "provider": "vercel",
     "auto_deploy": true,
     "custom_rules": ["Use production flag", "No custom domains for now"]
+  }', '00000000-0000-0000-0000-000000000001'),
+  ('distribution', '{
+    "enabled": true,
+    "platforms": ["twitter"]
   }', '00000000-0000-0000-0000-000000000001');

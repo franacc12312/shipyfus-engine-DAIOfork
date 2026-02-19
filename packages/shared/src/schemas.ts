@@ -49,6 +49,12 @@ export const deploymentConfigSchema = z.object({
   custom_rules: z.array(z.string()).optional(),
 });
 
+export const distributionConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  platforms: z.array(z.string()).optional(),
+  custom_rules: z.array(z.string()).optional(),
+});
+
 export const constraintConfigSchemas = {
   research: researchConfigSchema,
   ideation: ideationConfigSchema,
@@ -56,9 +62,10 @@ export const constraintConfigSchemas = {
   planning: planningConfigSchema,
   development: developmentConfigSchema,
   deployment: deploymentConfigSchema,
+  distribution: distributionConfigSchema,
 } as const;
 
-export const departmentSchema = z.enum(['research', 'ideation', 'branding', 'planning', 'development', 'deployment']);
+export const departmentSchema = z.enum(['research', 'ideation', 'branding', 'planning', 'development', 'deployment', 'distribution']);
 
 export const updateConstraintSchema = z.object({
   config: z.record(z.unknown()),
@@ -114,6 +121,7 @@ export const hitlConfigSchema = z.object({
   gate_after_branding: z.boolean(),
   gate_after_planning: z.boolean(),
   gate_after_development: z.boolean(),
+  gate_after_deployment: z.boolean(),
 });
 
 export const updateHitlConfigSchema = z.object({
@@ -123,6 +131,7 @@ export const updateHitlConfigSchema = z.object({
   gate_after_branding: z.boolean().optional(),
   gate_after_planning: z.boolean().optional(),
   gate_after_development: z.boolean().optional(),
+  gate_after_deployment: z.boolean().optional(),
 });
 
 export const hitlGateActionSchema = z.enum(['approve', 'retry', 'cancel']);
@@ -145,14 +154,10 @@ export const startRunSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
   startFrom: departmentSchema.optional(),
   sourceRunId: z.string().uuid().optional(),
+  mockDomainPurchase: z.boolean().optional(),
 }).refine(
-  (data) => {
-    // sourceRunId required when startFrom is set (except 'research' which is a no-op)
-    if (data.startFrom && data.startFrom !== 'research' && !data.sourceRunId) {
-      return false;
-    }
-    return true;
-  },
+  // sourceRunId required when startFrom is set (except 'research' which is a no-op)
+  (data) => !data.startFrom || data.startFrom === 'research' || !!data.sourceRunId,
   { message: 'sourceRunId is required when startFrom is set (except research)', path: ['sourceRunId'] },
 );
 

@@ -31,11 +31,17 @@ Create a pull request for the current branch — but first, pull main, resolve c
 - Pre-existing integration test failures (e.g., `routes.test.ts` hitting a live server) can be noted and ignored
 - Report the test results
 
-### 5. Build verification
+### 5. Simplify and refine code
+- Use the `code-simplifier` subagent (via the Task tool with `subagent_type: "code-simplifier"`) to simplify and refine the code changed in this branch
+- The agent will focus on recently modified code, improving clarity, consistency, and maintainability while preserving all functionality
+- If the agent makes any changes, review the diff, then stage and commit them: `git add -A && git commit -m "refactor: simplify and refine code"`
+- If no changes were made, proceed
+
+### 6. Build verification
 - Run `pnpm --filter @daio/frontend build` to verify the frontend builds cleanly
 - If the build fails, fix the errors before proceeding
 
-### 6. Run the app and verify
+### 7. Run the app and verify
 - Start the dev servers: `pnpm dev`
 - Wait for both backend and frontend to be ready
 - Hit the backend health endpoint to confirm it's running: `curl http://localhost:<port>/api/health`
@@ -47,7 +53,7 @@ Create a pull request for the current branch — but first, pull main, resolve c
 - If Chrome MCP is not available, do basic API smoke tests with curl instead
 - Stop the dev servers when done
 
-### 7. Create the PR
+### 8. Create the PR
 - Push the branch to origin: `git push -u origin <branch-name>`
 - Analyze ALL commits in `git log main..HEAD` to write the PR description
 - Create the PR using `gh pr create` with this format:
