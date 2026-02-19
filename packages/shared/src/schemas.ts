@@ -155,6 +155,7 @@ export const startRunSchema = z.object({
   startFrom: departmentSchema.optional(),
   sourceRunId: z.string().uuid().optional(),
   mockDomainPurchase: z.boolean().optional(),
+  skipDevelopment: z.boolean().optional(),
 }).refine(
   // sourceRunId required when startFrom is set (except 'research' which is a no-op)
   (data) => !data.startFrom || data.startFrom === 'research' || !!data.sourceRunId,

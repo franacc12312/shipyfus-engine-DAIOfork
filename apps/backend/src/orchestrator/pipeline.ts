@@ -51,6 +51,7 @@ export class PipelineOrchestrator {
   private runId: string;
   private cancelled = false;
   private mockDomainPurchase = false;
+  private skipDevelopment = false;
   private agentMap = new Map<string, string>();
 
   constructor(runId: string) {
@@ -91,6 +92,7 @@ export class PipelineOrchestrator {
       const startFrom = metadata._startFrom as string | undefined;
       const sourceRunId = metadata._sourceRunId as string | undefined;
       this.mockDomainPurchase = metadata._mockDomainPurchase === true;
+      this.skipDevelopment = metadata._skipDevelopment === true;
 
       if (startFrom && sourceRunId) {
         await this.createStagesFromSource(startFrom, sourceRunId);
@@ -280,6 +282,9 @@ export class PipelineOrchestrator {
 
     // Fetch constraints
     const constraints = await this.fetchConstraints();
+    if (this.skipDevelopment) {
+      constraints.development.enabled = false;
+    }
 
     // Helper to check stage status before running
     const getStatus = (stage: string) =>
@@ -407,7 +412,7 @@ export class PipelineOrchestrator {
     const analyticsConfig = constraints.development.analytics;
     let analyticsInjected = false;
     if (analyticsConfig?.enabled !== false && analyticsConfig?.provider !== 'none' && env.POSTHOG_API_KEY) {
-      const injResult = injectPostHogSnippet(productDir, env.POSTHOG_API_KEY, env.POSTHOG_HOST);
+      const injResult = injectPostHogSnippet(productDir, env.POSTHOG_API_KEY, env.POSTHOG_HOST, prd.productName, this.runId);
       analyticsInjected = injResult.injected;
       if (injResult.injected) {
         await this.insertLog('development', `PostHog analytics injected into: ${injResult.filesModified.join(', ')}`);
