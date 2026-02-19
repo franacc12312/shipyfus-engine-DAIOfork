@@ -6,10 +6,12 @@ import { join, relative } from 'node:path';
  * Uses the standard PostHog JS loader pattern.
  */
 function getPostHogSnippet(apiKey: string, host: string, productName?: string, runId?: string): string {
-  const registerProps: Record<string, string> = {};
-  if (productName) registerProps.daio_product = productName;
-  if (runId) registerProps.daio_run_id = runId;
-  const registerLine = Object.keys(registerProps).length > 0
+  const registerProps = {
+    ...(productName && { daio_product: productName }),
+    ...(runId && { daio_run_id: runId }),
+  };
+  const hasProps = Object.keys(registerProps).length > 0;
+  const registerLine = hasProps
     ? `\n    posthog.register(${JSON.stringify(registerProps)})`
     : '';
 

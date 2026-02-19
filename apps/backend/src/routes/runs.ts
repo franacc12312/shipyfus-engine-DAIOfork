@@ -106,17 +106,12 @@ router.post('/', requireAdmin, async (req, res, next) => {
 
     // Block dev-only features in production
     if (process.env.NODE_ENV === 'production') {
-      if (startFrom) {
-        res.status(403).json({ error: 'startFrom is not allowed in production' });
-        return;
-      }
-      if (mockDomainPurchase) {
-        res.status(403).json({ error: 'mockDomainPurchase is not allowed in production' });
-        return;
-      }
-      if (skipDevelopment) {
-        res.status(403).json({ error: 'skipDevelopment is not allowed in production' });
-        return;
+      const devOnlyFields = { startFrom, mockDomainPurchase, skipDevelopment };
+      for (const [field, value] of Object.entries(devOnlyFields)) {
+        if (value) {
+          res.status(403).json({ error: `${field} is not allowed in production` });
+          return;
+        }
       }
     }
 

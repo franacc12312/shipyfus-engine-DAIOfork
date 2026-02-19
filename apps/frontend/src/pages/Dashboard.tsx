@@ -50,15 +50,13 @@ export function Dashboard() {
     setStarting(true);
     try {
       const body: Record<string, unknown> = {};
-      if (devMode && startFrom) {
-        body.startFrom = startFrom;
-        if (sourceRunId) body.sourceRunId = sourceRunId;
-      }
-      if (devMode && mockDomainPurchase) {
-        body.mockDomainPurchase = true;
-      }
-      if (devMode && skipDevelopment) {
-        body.skipDevelopment = true;
+      if (devMode) {
+        if (startFrom) {
+          body.startFrom = startFrom;
+          if (sourceRunId) body.sourceRunId = sourceRunId;
+        }
+        if (mockDomainPurchase) body.mockDomainPurchase = true;
+        if (skipDevelopment) body.skipDevelopment = true;
       }
       await api.post('/runs', body);
       const message = devMode && startFrom
