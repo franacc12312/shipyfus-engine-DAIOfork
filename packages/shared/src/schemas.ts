@@ -22,12 +22,18 @@ export const planningConfigSchema = z.object({
   custom_rules: z.array(z.string()).optional(),
 });
 
+export const analyticsConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  provider: z.enum(['posthog', 'none']).optional(),
+});
+
 export const developmentConfigSchema = z.object({
   framework: z.string().optional(),
   language: z.string().optional(),
   max_files: z.number().int().min(1).max(100).optional(),
   max_iterations: z.number().int().min(1).max(50).optional(),
   max_budget_usd: z.number().min(0.1).max(100).optional(),
+  analytics: analyticsConfigSchema.optional(),
   custom_rules: z.array(z.string()).optional(),
 });
 
@@ -149,6 +155,7 @@ export const startRunSchema = z.object({
   startFrom: departmentSchema.optional(),
   sourceRunId: z.string().uuid().optional(),
   mockDomainPurchase: z.boolean().optional(),
+  skipDevelopment: z.boolean().optional(),
 }).refine(
   // sourceRunId required when startFrom is set (except 'research' which is a no-op)
   (data) => !data.startFrom || data.startFrom === 'research' || !!data.sourceRunId,

@@ -19,6 +19,7 @@ export function Dashboard() {
   const [startFrom, setStartFrom] = useState<Department | ''>('');
   const [sourceRunId, setSourceRunId] = useState('');
   const [mockDomainPurchase, setMockDomainPurchase] = useState(true);
+  const [skipDevelopment, setSkipDevelopment] = useState(false);
 
   useEffect(() => {
     fetchRuns();
@@ -49,12 +50,13 @@ export function Dashboard() {
     setStarting(true);
     try {
       const body: Record<string, unknown> = {};
-      if (devMode && startFrom) {
-        body.startFrom = startFrom;
-        if (sourceRunId) body.sourceRunId = sourceRunId;
-      }
-      if (devMode && mockDomainPurchase) {
-        body.mockDomainPurchase = true;
+      if (devMode) {
+        if (startFrom) {
+          body.startFrom = startFrom;
+          if (sourceRunId) body.sourceRunId = sourceRunId;
+        }
+        if (mockDomainPurchase) body.mockDomainPurchase = true;
+        if (skipDevelopment) body.skipDevelopment = true;
       }
       await api.post('/runs', body);
       const message = devMode && startFrom
@@ -143,6 +145,18 @@ export function Dashboard() {
                     className="accent-yellow-500"
                   />
                   <span className="text-xs text-zinc-400">Skip real Porkbun purchase</span>
+                </label>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="text-[10px] text-yellow-500/70 uppercase tracking-wider w-24">Skip dev</label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={skipDevelopment}
+                    onChange={(e) => setSkipDevelopment(e.target.checked)}
+                    className="accent-yellow-500"
+                  />
+                  <span className="text-xs text-zinc-400">Stub HTML instead of ralph-loop</span>
                 </label>
               </div>
             </div>

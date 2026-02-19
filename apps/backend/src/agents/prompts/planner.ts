@@ -1,6 +1,17 @@
-import type { PlanningConfig, ProductPRD } from '@daio/shared';
+import type { AnalyticsConfig, PlanningConfig, ProductPRD } from '@daio/shared';
 
-export function buildPlannerPrompt(prd: ProductPRD, config: PlanningConfig): string {
+export function buildPlannerPrompt(prd: ProductPRD, config: PlanningConfig, analytics?: AnalyticsConfig): string {
+  const analyticsSection = analytics?.enabled !== false && analytics?.provider !== 'none' ? `
+
+## Analytics Integration
+PostHog analytics will be automatically injected into the built HTML at the infrastructure level.
+For richer tracking, include these in the plan:
+- Install \`posthog-js\` package
+- Initialize PostHog in the app root/entry point: \`posthog.init('<api-key>', { api_host: 'https://us.i.posthog.com' })\`
+- Add custom event tracking for key user actions (e.g., button clicks, form submissions, feature usage)
+- Use \`posthog.capture('event_name', { properties })\` for important user interactions
+Note: The API key will be provided at build time. Use an environment variable like \`VITE_POSTHOG_KEY\` or \`NEXT_PUBLIC_POSTHOG_KEY\`.` : '';
+
   return `You are an AI software architect. Convert this product requirement document (PRD) into a structured execution plan.
 
 ## Product PRD
@@ -13,6 +24,7 @@ ${JSON.stringify(prd, null, 2)}
 - Require tests per phase: ${config.require_tests}
 - Maximum files per phase: ${config.max_files_per_phase}
 ${config.custom_rules?.length ? `- Custom rules:\n${config.custom_rules.map((r) => `  - ${r}`).join('\n')}` : ''}
+${analyticsSection}
 
 ## Instructions
 
