@@ -18,6 +18,7 @@ import type { RawResearchData, ResearchContext } from '@daio/research';
 import type { BrandCandidate, PorkbunConfig } from '@daio/brand';
 import type { TwitterConfig } from '@daio/social';
 import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, DistributionConfig, AnalyticsConfig, ProductPRD, Department, HitlConfig, DomainChoice } from '@daio/shared';
+import { getRandomRetryMessage } from '@daio/shared';
 import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
 import { injectPostHogSnippet } from '../services/posthog.js';
 
@@ -1139,7 +1140,7 @@ export class PipelineOrchestrator {
 
       if (stageData.status === 'pending') {
         // Rejected with retry — re-run the stage
-        await this.insertLog(stage, `Retry requested for "${stage}". Re-running stage.`);
+        await this.insertLog(stage, `${getRandomRetryMessage()} Retrying "${stage}"...`);
         throw new RetryStageError(stage);
       }
 
