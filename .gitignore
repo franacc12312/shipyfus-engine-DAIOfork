@@ -7,3 +7,5 @@ thoughts/
 products/*/
 .worktrees/
 .DS_Store
+.worktrees
+.vercel

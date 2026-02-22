@@ -1,6 +1,6 @@
 {
   "framework": "vite",
-  "buildCommand": "pnpm --filter @daio/landing build",
+  "buildCommand": "cd apps/landing && npx vite build",
   "outputDirectory": "apps/landing/dist",
-  "installCommand": "pnpm install"
+  "installCommand": "npm install -g pnpm@10.26.0 && pnpm install --no-frozen-lockfile"
 }

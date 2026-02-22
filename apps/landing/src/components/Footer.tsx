@@ -1,4 +1,4 @@
-const DASHBOARD_URL = 'https://daio.app';
+const DASHBOARD_URL = 'https://app.daio.one';
 
 const links = [
   { label: 'Dashboard', href: DASHBOARD_URL },

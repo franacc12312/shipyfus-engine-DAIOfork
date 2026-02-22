@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-const DASHBOARD_URL = 'https://daio.app';
+const DASHBOARD_URL = 'https://app.daio.one';
 
 export default function Hero() {
   const [scrolled, setScrolled] = useState(false);

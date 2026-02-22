@@ -14,7 +14,7 @@ describe('Hero', () => {
   it('renders the CTA link pointing to dashboard', () => {
     render(<Hero />);
     const ctas = screen.getAllByText(/See it in action/);
-    expect(ctas[0].closest('a')).toHaveAttribute('href', 'https://daio.app');
+    expect(ctas[0].closest('a')).toHaveAttribute('href', 'https://app.daio.one');
   });
 
   it('renders the subtitle describing the pipeline', () => {

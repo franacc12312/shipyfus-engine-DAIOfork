@@ -14,6 +14,6 @@ describe('Navbar', () => {
   it('renders the dashboard link', () => {
     render(<Navbar />);
     const links = screen.getAllByText(/Launch App/);
-    expect(links[0].closest('a')).toHaveAttribute('href', 'https://daio.app');
+    expect(links[0].closest('a')).toHaveAttribute('href', 'https://app.daio.one');
   });
 });

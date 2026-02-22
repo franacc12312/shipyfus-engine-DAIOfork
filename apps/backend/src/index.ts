@@ -1,5 +1,8 @@
 import express from 'express';
 import cors from 'cors';
+import { existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { env } from './env.js';
 import { errorHandler } from './middleware/errors.js';
 import { db } from './services/db.js';
@@ -11,6 +14,8 @@ import productsRouter from './routes/products.js';
 import agentsRouter from './routes/agents.js';
 import hitlRouter from './routes/hitl.js';
 import participantsRouter from './routes/participants.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 
@@ -26,6 +31,15 @@ app.use('/api/hitl-config', hitlRouter);
 app.use('/api/participants', participantsRouter);
 
 app.use(errorHandler);
+
+// In production, serve the frontend static files
+const frontendDist = resolve(__dirname, '../../frontend/dist');
+if (existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('/{*path}', (_req, res) => {
+    res.sendFile(resolve(frontendDist, 'index.html'));
+  });
+}
 
 // Resume orphaned runs on startup (runs interrupted by server restart)
 // Runs with stages in 'awaiting_approval' state are preserved — the resumed
