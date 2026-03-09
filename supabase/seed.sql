@@ -1,6 +1,7 @@
 -- Default owner user
 insert into public.users (id, email, role) values
-  ('00000000-0000-0000-0000-000000000001', 'owner@daio.local', 'owner');
+  ('00000000-0000-0000-0000-000000000001', 'owner@daio.local', 'owner')
+on conflict (id) do nothing;
 
 -- Default constraints for all departments
 insert into public.constraints (department, config, updated_by) values
@@ -35,4 +36,9 @@ insert into public.constraints (department, config, updated_by) values
   ('distribution', '{
     "enabled": true,
     "platforms": ["twitter"]
-  }', '00000000-0000-0000-0000-000000000001');
+  }', '00000000-0000-0000-0000-000000000001')
+on conflict (department) do update
+set
+  config = excluded.config,
+  updated_by = excluded.updated_by,
+  updated_at = now();

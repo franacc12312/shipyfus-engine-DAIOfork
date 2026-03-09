@@ -67,6 +67,15 @@ vi.mock('../services/db.js', () => {
               })),
             };
           }
+          if (table === 'approval_requests') {
+            return {
+              ...chainable,
+              single: vi.fn().mockImplementation(async () => ({
+                data: null,
+                error: { code: 'PGRST116' },
+              })),
+            };
+          }
           return chainable;
         },
       }),
@@ -85,40 +94,44 @@ vi.mock('../env.js', () => ({
 }));
 
 // Mock @daio/brand
-vi.mock('@daio/brand', () => ({
-  rankCandidates: vi.fn().mockResolvedValue([
-    {
-      rank: 1,
-      name: 'TestBrand',
+vi.mock('@daio/brand', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@daio/brand')>();
+  return {
+    ...actual,
+    rankCandidates: vi.fn().mockResolvedValue([
+      {
+        rank: 1,
+        name: 'TestBrand',
+        domain: 'testbrand.xyz',
+        tld: 'xyz',
+        strategy: 'invented',
+        price: 2,
+        reasoning: 'Great name',
+        score: 85,
+        alternatives: [],
+      },
+    ]),
+    purchaseDomain: vi.fn().mockResolvedValue({
       domain: 'testbrand.xyz',
-      tld: 'xyz',
-      strategy: 'invented',
+      status: 'purchased',
       price: 2,
-      reasoning: 'Great name',
-      score: 85,
-      alternatives: [],
-    },
-  ]),
-  purchaseDomain: vi.fn().mockResolvedValue({
-    domain: 'testbrand.xyz',
-    status: 'purchased',
-    price: 2,
-    registrar: 'porkbun',
-  }),
-  verifyDomainOwnership: vi.fn().mockResolvedValue({
-    verified: true,
-    domain: 'testbrand.xyz',
-    status: 'ACTIVE',
-  }),
-  configureDNSForVercel: vi.fn().mockResolvedValue({
-    domain: 'testbrand.xyz',
-    records: [
-      { type: 'A', name: '@', content: '76.76.21.21', success: true },
-      { type: 'CNAME', name: 'www', content: 'cname.vercel-dns.com', success: true },
-    ],
-    allSuccess: true,
-  }),
-}));
+      registrar: 'porkbun',
+    }),
+    verifyDomainOwnership: vi.fn().mockResolvedValue({
+      verified: true,
+      domain: 'testbrand.xyz',
+      status: 'ACTIVE',
+    }),
+    configureDNSForVercel: vi.fn().mockResolvedValue({
+      domain: 'testbrand.xyz',
+      records: [
+        { type: 'A', name: '@', content: '76.76.21.21', success: true },
+        { type: 'CNAME', name: 'www', content: 'cname.vercel-dns.com', success: true },
+      ],
+      allSuccess: true,
+    }),
+  };
+});
 
 // Mock @daio/social
 vi.mock('@daio/social', () => ({
@@ -477,6 +490,7 @@ describe('PipelineOrchestrator — HITL branding', () => {
     expect(brandingUpdate).toBeDefined();
     expect(brandingUpdate!.data.output_context.candidates).toHaveLength(1); // Only 1 result from rankCandidates mock
     expect(brandingUpdate!.data.output_context.candidates[0].domain).toBe('testbrand.xyz');
+    expect(dbOps.some((op) => op.table === 'approval_requests' && op.op === 'insert')).toBe(true);
   });
 
   it('stores up to 3 candidates from recommendations', async () => {

@@ -11,9 +11,29 @@ import { DocumentViewer } from '../components/DocumentViewer';
 import { AdminGate } from '../components/AdminGate';
 import { ApprovalGate } from '../components/ApprovalGate';
 import { api } from '../lib/api';
-import { STAGES, type Department } from '@daio/shared';
+import { STAGES, type ApprovalRequest, type Department } from '@daio/shared';
 
 const STAGE_TABS = ['all', ...STAGES] as const;
+
+const OUTCOME_STYLES: Record<string, string> = {
+  pending: 'text-terminal-amber',
+  approved: 'text-terminal-green',
+  retry: 'text-terminal-amber',
+  cancel: 'text-terminal-red',
+};
+
+function formatTimestamp(timestamp: string | null | undefined): string {
+  if (!timestamp) return 'Pending';
+  return new Date(timestamp).toLocaleString();
+}
+
+function getApprovalLabel(request: ApprovalRequest): string {
+  if (request.status === 'pending') return 'Pending';
+  if (request.outcome === 'approved') return 'Approved';
+  if (request.outcome === 'retry') return 'Retry';
+  if (request.outcome === 'cancel') return 'Cancelled';
+  return 'Resolved';
+}
 
 export function RunDetail() {
   const { id } = useParams();
@@ -47,6 +67,10 @@ export function RunDetail() {
   const isRunning = run.status === 'running' || run.status === 'queued';
   const devStage = run.run_stages?.find((s) => s.stage === 'development');
   const totalCost = run.run_stages?.reduce((sum, s) => sum + (Number(s.cost_usd) || 0), 0) || 0;
+  const approvalRequests = [...(run.approval_requests || [])].sort((a, b) => (
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  ));
+  const pendingApprovalRequests = approvalRequests.filter((request) => request.status === 'pending');
 
   function getElapsed(): string {
     const r = run!;
@@ -134,6 +158,7 @@ export function RunDetail() {
           key={s.id}
           runId={run.id}
           stage={s}
+          approvalRequest={pendingApprovalRequests.find((request) => request.stage === s.stage)}
           onApproved={() => handleStageApproved(s.stage as Department)}
           onViewDocs={() => setViewMode('docs')}
         />
@@ -223,6 +248,51 @@ export function RunDetail() {
             <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-3">
               <div className="text-[9px] text-zinc-600 uppercase tracking-wider mb-1">Idea</div>
               <div className="text-xs text-zinc-300">{run.idea_summary}</div>
+            </div>
+          )}
+
+          {approvalRequests.length > 0 && (
+            <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950">
+              <div className="border-b border-zinc-800 px-3 py-2">
+                <div className="text-[9px] uppercase tracking-[0.24em] text-zinc-600">Approval Trail</div>
+                <div className="mt-1 text-[11px] text-zinc-500">
+                  Every review request and decision for this run.
+                </div>
+              </div>
+
+              <div className="divide-y divide-zinc-900/80">
+                {approvalRequests.slice(0, 6).map((request) => {
+                  const label = getApprovalLabel(request);
+                  const tone = OUTCOME_STYLES[request.status === 'pending' ? 'pending' : (request.outcome || 'pending')] || 'text-zinc-300';
+                  return (
+                    <div key={request.id} className="px-3 py-2.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">
+                            {request.stage}
+                          </div>
+                          <div className="mt-1 text-xs text-zinc-200">{request.subject}</div>
+                        </div>
+                        <div className={`shrink-0 text-[10px] uppercase tracking-[0.22em] ${tone}`}>
+                          {label}
+                        </div>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-500">
+                        <span>{formatTimestamp(request.status === 'pending' ? request.created_at : request.resolved_at)}</span>
+                        {request.actor_name && <span>By {request.actor_name}</span>}
+                        {(request.provider || request.policy?.providers?.[0]) && (
+                          <span>Via {(request.provider || request.policy?.providers?.[0] || '').toUpperCase()}</span>
+                        )}
+                      </div>
+
+                      {request.reason && (
+                        <div className="mt-1 text-[11px] text-zinc-400">{request.reason}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

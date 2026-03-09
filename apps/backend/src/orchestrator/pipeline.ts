@@ -4,23 +4,24 @@ import { db } from '../services/db.js';
 import { env } from '../env.js';
 import { AgentRunner } from '../agents/runner.js';
 import { STAGE_ORDER } from './stages.js';
-import { buildIdeatorPrompt } from '../agents/prompts/ideator.js';
 import { buildResearcherPrompt } from '../agents/prompts/researcher.js';
-import { buildPlannerPrompt } from '../agents/prompts/planner.js';
 import { buildDeveloperPrompt } from '../agents/prompts/developer.js';
 import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
 import { buildHeraldPrompt } from '../agents/prompts/herald.js';
-import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js';
-import { rankCandidates, purchaseDomain, configureDNSForVercel, verifyDomainOwnership } from '@daio/brand';
+import { createIdeationStage } from '@daio/idea';
+import { completeBrandSelection, createBrandingStage, rankCandidates, purchaseDomain, configureDNSForVercel, verifyDomainOwnership } from '@daio/brand';
+import { createPlanningStage } from '@daio/planning';
 import { postTweet } from '@daio/social';
 import { ResearchService, TavilySource, ProductHuntSource, HackerNewsSource, RedditSource } from '@daio/research';
 import type { RawResearchData, ResearchContext } from '@daio/research';
-import type { BrandCandidate, PorkbunConfig } from '@daio/brand';
+import type { PorkbunConfig } from '@daio/brand';
 import type { TwitterConfig } from '@daio/social';
 import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, DistributionConfig, AnalyticsConfig, ProductPRD, Department, HitlConfig, DomainChoice } from '@daio/shared';
 import { getRandomRetryMessage } from '@daio/shared';
 import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
 import { injectPostHogSnippet } from '../services/posthog.js';
+import { buildStageApprovalRequest, createApprovalService, resolveAllPendingApprovalRequests } from '../services/approvals.js';
+import { createStageContext } from './stage-context.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
 
@@ -474,6 +475,11 @@ export class PipelineOrchestrator {
     this.cancelled = true;
     this.runner.killAll();
     await this.updateRunStatus('cancelled');
+    await resolveAllPendingApprovalRequests({
+      runId: this.runId,
+      decision: { action: 'cancel' },
+      reason: 'Pipeline cancelled while approval was pending',
+    });
 
     // Set any running/awaiting stages to cancelled
     await db.from('run_stages').update({
@@ -562,25 +568,34 @@ export class PipelineOrchestrator {
     await this.updateStageStatus('ideation', 'running');
 
     try {
-      const prompt = buildIdeatorPrompt(config, researchMarkdown ?? undefined);
-      const result = await this.runner.runOnce(prompt, {
-        runId: this.runId,
-        stage: 'ideation',
-        cwd: productDir,
-        maxBudgetUsd: 3,
-        agentId: this.agentMap.get('ideation'),
-      });
+      const stage = createIdeationStage();
+      const result = await stage.run(
+        createStageContext({
+          runId: this.runId,
+          stage: 'ideation',
+          productDir,
+          runner: this.runner,
+          log: (content) => this.insertLog('ideation', content),
+        }),
+        {
+          config,
+          researchMarkdown,
+          maxBudgetUsd: 3,
+          agentId: this.agentMap.get('ideation'),
+        },
+      );
 
-      const prd = result.json as ProductPRD;
-      if (!prd || !prd.productName) {
-        throw new Error('Ideation failed to produce a valid PRD');
+      if (result.status !== 'completed') {
+        throw new Error(result.status === 'failed' ? result.error : 'Ideation is awaiting approval');
       }
+
+      const { prd, costUsd } = result.output;
 
       // Store PRD in stage output and update run summary
       await db.from('run_stages').update({
         status: 'completed',
         output_context: prd as unknown as Record<string, unknown>,
-        cost_usd: result.cost,
+        cost_usd: costUsd,
         completed_at: new Date().toISOString(),
       }).eq('run_id', this.runId).eq('stage', 'ideation');
 
@@ -599,33 +614,6 @@ export class PipelineOrchestrator {
     await this.updateStageStatus('branding', 'running');
 
     try {
-      // Step 1: Run Prism agent to generate brand name candidates
-      const branderPrompt = buildBranderPrompt(prd, config);
-      const branderResult = await this.runner.runOnce(branderPrompt, {
-        runId: this.runId,
-        stage: 'branding',
-        cwd: productDir,
-        maxBudgetUsd: 3,
-        agentId: this.agentMap.get('branding'),
-      });
-
-      // Parse candidates from Prism's response
-      const candidates = branderResult.json as BrandCandidate[] | null;
-      if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
-        throw new Error('Prism failed to generate brand candidates');
-      }
-
-      // Step 2: Check domain availability and rank candidates
-      const maxPrice = config.max_domain_price ?? 15;
-      const productInfo = {
-        productDescription: prd.productDescription,
-        technicalRequirements: prd.technicalRequirements,
-        targetUser: prd.targetUser,
-        coreFunctionality: prd.coreFunctionality,
-      };
-      const recommendations = await rankCandidates(candidates, productInfo, maxPrice);
-
-      // Step 3: Check HITL config — if enabled + gate_after_branding, pause for user selection
       const { data: hitlData } = await db
         .from('hitl_config')
         .select('*')
@@ -633,88 +621,47 @@ export class PipelineOrchestrator {
         .single();
 
       const hitlEnabled = hitlData?.enabled && (hitlData as HitlConfig).gate_after_branding;
-
-      if (hitlEnabled) {
-        // Store candidates for user selection (don't purchase yet)
-        // If 0 candidates, store empty array — DomainPicker shows error state with re-run option
-        const top3: DomainChoice[] = recommendations.slice(0, 3).map((r) => ({
-          domain: r.domain,
-          name: r.name,
-          price: r.price,
-          tld: r.tld,
-          strategy: r.strategy,
-          reasoning: r.reasoning,
-          score: r.score,
-        }));
-
-        await db.from('run_stages').update({
-          status: 'completed',
-          output_context: { candidates: top3 },
-          cost_usd: branderResult.cost,
-          completed_at: new Date().toISOString(),
-        }).eq('run_id', this.runId).eq('stage', 'branding');
-
-        return { prd, domainName: null };
-      }
-
-      // HITL disabled: fail if no domains available
-      if (recommendations.length === 0) {
-        throw new Error('No available domains found within budget');
-      }
-
-      // HITL disabled: auto-select winner and purchase immediately
-      const winner = recommendations[0];
-
-      // Step 4: Purchase the domain via Porkbun (CFO action)
-      const { verified: purchaseVerified, dnsConfigured, error: purchaseError } =
-        await this.executeDomainPurchase(winner.domain, winner.price);
-
-      // Step 5: Run CFO agent for narration/logging (only if purchase succeeded)
-      if (purchaseVerified) {
-        const cfoPrompt = buildCFOPrompt(winner.domain, winner.price, winner.name);
-        const cfoAgentId = await this.resolveCFOAgent();
-
-        await this.runner.runOnce(cfoPrompt, {
+      const stage = createBrandingStage();
+      const result = await stage.run(
+        createStageContext({
           runId: this.runId,
           stage: 'branding',
-          cwd: productDir,
-          maxBudgetUsd: 1,
-          agentId: cfoAgentId,
-        });
+          productDir,
+          runner: this.runner,
+          log: (content) => this.insertLog('branding', content),
+        }),
+        {
+          prd,
+          config,
+          humanSelectionEnabled: hitlEnabled,
+          branderAgentId: this.agentMap.get('branding'),
+          cfoAgentId: await this.resolveCFOAgent(),
+          rankCandidatesFn: rankCandidates,
+          purchaseDomain: (choice) => this.executeDomainPurchase(choice.domain, choice.price),
+        },
+      );
+
+      if (result.status !== 'completed') {
+        throw new Error(result.status === 'failed' ? result.error : 'Branding is awaiting approval');
       }
 
-      // Step 6: Update PRD with the final product name
-      prd.productName = winner.name;
-
-      // Store branding output
-      const outputContext: Record<string, unknown> = {
-        productName: winner.name,
-        domain: winner.domain,
-        tld: winner.tld,
-        price: winner.price,
-        strategy: winner.strategy,
-        reasoning: winner.reasoning,
-        purchased: purchaseVerified,
-        dnsConfigured,
-        alternatives: winner.alternatives,
-      };
-      if (purchaseError) outputContext.purchaseError = purchaseError;
+      const { prd: nextPrd, domainName, outputContext, costUsd } = result.output;
 
       await db.from('run_stages').update({
         status: 'completed',
         output_context: outputContext,
-        cost_usd: branderResult.cost,
+        cost_usd: costUsd,
         completed_at: new Date().toISOString(),
       }).eq('run_id', this.runId).eq('stage', 'branding');
 
       // Only store domain_name on run if purchase was verified
-      if (purchaseVerified) {
+      if (domainName) {
         await db.from('runs').update({
-          domain_name: winner.domain,
+          domain_name: domainName,
         }).eq('id', this.runId);
       }
 
-      return { prd, domainName: purchaseVerified ? winner.domain : null };
+      return { prd: nextPrd, domainName };
     } catch (err) {
       if (!this.cancelled) await this.updateStageStatus('branding', 'failed');
       throw err;
@@ -778,26 +725,21 @@ export class PipelineOrchestrator {
     prd: ProductPRD,
     productDir: string,
   ): Promise<{ prd: ProductPRD; domainName: string | null }> {
-    // Purchase domain via Porkbun (or mock)
-    const { verified: purchaseVerified, dnsConfigured, error: purchaseError } =
-      await this.executeDomainPurchase(chosen.domain, chosen.price);
-
-    // Run CFO agent for narration (only if purchase succeeded)
-    if (purchaseVerified) {
-      const cfoPrompt = buildCFOPrompt(chosen.domain, chosen.price, chosen.name);
-      const cfoAgentId = await this.resolveCFOAgent();
-
-      await this.runner.runOnce(cfoPrompt, {
+    const result = await completeBrandSelection(
+      createStageContext({
         runId: this.runId,
         stage: 'branding',
-        cwd: productDir,
-        maxBudgetUsd: 1,
-        agentId: cfoAgentId,
-      });
-    }
-
-    // Update PRD with chosen name
-    prd.productName = chosen.name;
+        productDir,
+        runner: this.runner,
+        log: (content) => this.insertLog('branding', content),
+      }),
+      {
+        selection: chosen,
+        prd,
+        cfoAgentId: await this.resolveCFOAgent(),
+        purchaseDomain: (choice) => this.executeDomainPurchase(choice.domain, choice.price),
+      },
+    );
 
     // Merge purchase results into branding stage output_context
     const { data: currentStage } = await db
@@ -810,29 +752,21 @@ export class PipelineOrchestrator {
     const existingCtx = (currentStage?.output_context as Record<string, unknown>) || {};
     const mergedCtx: Record<string, unknown> = {
       ...existingCtx,
-      productName: chosen.name,
-      domain: chosen.domain,
-      tld: chosen.tld,
-      price: chosen.price,
-      strategy: chosen.strategy,
-      reasoning: chosen.reasoning,
-      purchased: purchaseVerified,
-      dnsConfigured,
+      ...result.outputContext,
     };
-    if (purchaseError) mergedCtx.purchaseError = purchaseError;
 
     await db.from('run_stages').update({
       output_context: mergedCtx,
     }).eq('run_id', this.runId).eq('stage', 'branding');
 
     // Only store domain_name on run if purchase was verified
-    if (purchaseVerified) {
+    if (result.domainName) {
       await db.from('runs').update({
-        domain_name: chosen.domain,
+        domain_name: result.domainName,
       }).eq('id', this.runId);
     }
 
-    return { prd, domainName: purchaseVerified ? chosen.domain : null };
+    return { prd: result.prd, domainName: result.domainName };
   }
 
   private async getBrandingOutputContext(): Promise<Record<string, unknown> | null> {
@@ -850,19 +784,33 @@ export class PipelineOrchestrator {
     await this.updateStageStatus('planning', 'running');
 
     try {
-      const prompt = buildPlannerPrompt(prd, config, analytics);
-      const result = await this.runner.runOnce(prompt, {
+      const stage = createPlanningStage();
+      const ctx = createStageContext({
         runId: this.runId,
         stage: 'planning',
-        cwd: productDir,
-        maxBudgetUsd: 5,
+        productDir,
+        runner: this.runner,
+        log: (content) => this.insertLog('planning', content),
+      });
+      const result = await stage.run(ctx, {
+        prd,
+        config,
+        analytics,
         agentId: this.agentMap.get('planning'),
       });
 
+      if (result.status === 'failed') {
+        throw new Error(result.error);
+      }
+
+      if (result.status !== 'completed') {
+        throw new Error('Planning paused unexpectedly');
+      }
+
       await db.from('run_stages').update({
         status: 'completed',
-        output_context: result.json as Record<string, unknown> | null,
-        cost_usd: result.cost,
+        output_context: result.output.plan as Record<string, unknown>,
+        cost_usd: result.output.costUsd,
         completed_at: new Date().toISOString(),
       }).eq('run_id', this.runId).eq('stage', 'planning');
     } catch (err) {
@@ -1108,9 +1056,33 @@ export class PipelineOrchestrator {
     const gateKey = `gate_after_${stage}` as keyof HitlConfig;
     if (!config[gateKey]) return;
 
-    // Set stage to awaiting_approval
-    await this.updateStageStatus(stage, 'awaiting_approval');
-    await this.insertLog(stage, `Stage "${stage}" complete. Waiting for human approval before proceeding...`);
+    const { data: stageData, error: stageError } = await db
+      .from('run_stages')
+      .select('status, output_context')
+      .eq('run_id', this.runId)
+      .eq('stage', stage)
+      .single();
+
+    if (stageError) {
+      throw stageError;
+    }
+
+    if (!stageData) {
+      throw new Error(`Stage ${stage} not found before approval gate`);
+    }
+
+    if (stageData.status !== 'awaiting_approval') {
+      await this.updateStageStatus(stage, 'awaiting_approval');
+    }
+
+    const publication = await createApprovalService(this.runId).publish(
+      buildStageApprovalRequest(stage, stageData.output_context ?? {}),
+    );
+
+    await this.insertLog(
+      stage,
+      `Stage "${stage}" complete. Waiting for human approval before proceeding... [request=${publication.requestId}]`,
+    );
 
     // Poll every 3s until approved, retried, or cancelled
     const POLL_INTERVAL = 3000;
@@ -1121,30 +1093,30 @@ export class PipelineOrchestrator {
         throw new Error('Pipeline cancelled while awaiting approval');
       }
 
-      const { data: stageData } = await db
+      const { data: polledStageData } = await db
         .from('run_stages')
         .select('status')
         .eq('run_id', this.runId)
         .eq('stage', stage)
         .single();
 
-      if (!stageData) {
+      if (!polledStageData) {
         throw new Error(`Stage ${stage} not found during approval polling`);
       }
 
-      if (stageData.status === 'completed') {
+      if (polledStageData.status === 'completed') {
         // Approved — continue pipeline
         await this.insertLog(stage, `Approval received for "${stage}". Continuing pipeline.`);
         return;
       }
 
-      if (stageData.status === 'pending') {
+      if (polledStageData.status === 'pending') {
         // Rejected with retry — re-run the stage
         await this.insertLog(stage, `${getRandomRetryMessage()} Retrying "${stage}"...`);
         throw new RetryStageError(stage);
       }
 
-      if (stageData.status === 'cancelled' || stageData.status === 'failed') {
+      if (polledStageData.status === 'cancelled' || polledStageData.status === 'failed') {
         // Rejected with cancel
         throw new Error(`Stage "${stage}" rejected — pipeline cancelled`);
       }

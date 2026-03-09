@@ -18,6 +18,9 @@ vi.mock('../services/db.js', () => {
         if (state.table === 'hitl_config') {
           return Promise.resolve({ data: { ...hitlConfig }, error: null });
         }
+        if (state.table === 'approval_requests') {
+          return Promise.resolve({ data: null, error: { code: 'PGRST116' } });
+        }
         if (state.table === 'run_stages' && state.filters.stage) {
           pollCount++;
           const status = stageStatusResponses[state.filters.stage] || 'awaiting_approval';
@@ -193,6 +196,8 @@ describe('checkApprovalGate', () => {
       (op) => op.table === 'run_stages' && op.op === 'update' && op.data?.status === 'awaiting_approval'
     );
     expect(stageUpdates.length).toBeGreaterThanOrEqual(1);
+    const approvalInserts = dbOps.filter((op) => op.table === 'approval_requests' && op.op === 'insert');
+    expect(approvalInserts).toHaveLength(1);
   });
 
   it('continues when stage is approved (status=completed)', async () => {

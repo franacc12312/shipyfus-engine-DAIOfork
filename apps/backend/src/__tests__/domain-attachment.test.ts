@@ -78,14 +78,18 @@ vi.mock('../env.js', () => ({
   },
 }));
 
-vi.mock('@daio/brand', () => ({
-  rankCandidates: vi.fn().mockResolvedValue([
-    { rank: 1, name: 'TestBrand', domain: 'testbrand.xyz', tld: 'xyz', strategy: 'invented', price: 2, reasoning: 'Great', score: 85, alternatives: [] },
-  ]),
-  purchaseDomain: vi.fn().mockResolvedValue({ domain: 'testbrand.xyz', status: 'purchased', price: 2, registrar: 'porkbun' }),
-  configureDNSForVercel: vi.fn().mockResolvedValue({ domain: 'testbrand.xyz', records: [], allSuccess: true }),
-  verifyDomainOwnership: vi.fn().mockResolvedValue({ verified: true, domain: 'testbrand.xyz' }),
-}));
+vi.mock('@daio/brand', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@daio/brand')>();
+  return {
+    ...actual,
+    rankCandidates: vi.fn().mockResolvedValue([
+      { rank: 1, name: 'TestBrand', domain: 'testbrand.xyz', tld: 'xyz', strategy: 'invented', price: 2, reasoning: 'Great', score: 85, alternatives: [] },
+    ]),
+    purchaseDomain: vi.fn().mockResolvedValue({ domain: 'testbrand.xyz', status: 'purchased', price: 2, registrar: 'porkbun' }),
+    configureDNSForVercel: vi.fn().mockResolvedValue({ domain: 'testbrand.xyz', records: [], allSuccess: true }),
+    verifyDomainOwnership: vi.fn().mockResolvedValue({ verified: true, domain: 'testbrand.xyz' }),
+  };
+});
 
 const mockAddDomain = vi.fn();
 const mockGetDomainConfig = vi.fn();
@@ -150,6 +154,10 @@ function setupFullPipelineMocks(deployJson: Record<string, unknown>) {
 describe('Domain Attachment in Pipeline', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRunOnce.mockReset();
+    mockRunLoop.mockReset();
+    mockDestroy.mockReset();
+    mockKillAll.mockReset();
     dbOps.length = 0;
   });
 

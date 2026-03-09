@@ -13,7 +13,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@daio/approval": "workspace:*",
     "@daio/brand": "workspace:*",
+    "@daio/idea": "workspace:*",
+    "@daio/pipeline-core": "workspace:*",
+    "@daio/planning": "workspace:*",
     "@daio/research": "workspace:*",
     "@daio/shared": "workspace:*",
     "@daio/social": "workspace:*",

@@ -17,9 +17,21 @@ importers:
 
   apps/backend:
     dependencies:
+      '@daio/approval':
+        specifier: workspace:*
+        version: link:../../packages/approval
       '@daio/brand':
         specifier: workspace:*
         version: link:../../packages/brand
+      '@daio/idea':
+        specifier: workspace:*
+        version: link:../../packages/idea
+      '@daio/pipeline-core':
+        specifier: workspace:*
+        version: link:../../packages/pipeline-core
+      '@daio/planning':
+        specifier: workspace:*
+        version: link:../../packages/planning
       '@daio/research':
         specifier: workspace:*
         version: link:../../packages/research
@@ -153,12 +165,91 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@24.10.13)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.2)(tsx@4.21.0)
 
+  packages/approval:
+    dependencies:
+      '@daio/pipeline-core':
+        specifier: workspace:*
+        version: link:../pipeline-core
+    devDependencies:
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@24.10.13)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.2)(tsx@4.21.0)
+
   packages/brand:
     dependencies:
+      '@daio/pipeline-core':
+        specifier: workspace:*
+        version: link:../pipeline-core
+      '@daio/shared':
+        specifier: workspace:*
+        version: link:../shared
       whoiser:
         specifier: 2.0.0-beta.10
         version: 2.0.0-beta.10
     devDependencies:
+      '@daio/approval':
+        specifier: workspace:*
+        version: link:../approval
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@24.10.13)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.2)(tsx@4.21.0)
+
+  packages/idea:
+    dependencies:
+      '@daio/pipeline-core':
+        specifier: workspace:*
+        version: link:../pipeline-core
+      '@daio/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@daio/approval':
+        specifier: workspace:*
+        version: link:../approval
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@24.10.13)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.2)(tsx@4.21.0)
+
+  packages/pipeline-core:
+    dependencies:
+      '@daio/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.4(@types/node@24.10.13)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.2)(tsx@4.21.0)
+
+  packages/planning:
+    dependencies:
+      '@daio/pipeline-core':
+        specifier: workspace:*
+        version: link:../pipeline-core
+      '@daio/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      '@daio/approval':
+        specifier: workspace:*
+        version: link:../approval
       typescript:
         specifier: ^5.8.0
         version: 5.9.3

@@ -3,7 +3,7 @@ import { AdminGate } from './AdminGate';
 import { ResearchBriefViewer } from './ResearchBriefViewer';
 import { DomainPicker } from './DomainPicker';
 import { approveStage, rejectStage } from '../lib/hitl';
-import type { RunStage } from '@daio/shared';
+import type { ApprovalRequest, RunStage } from '@daio/shared';
 
 const STAGE_LABELS: Record<string, string> = {
   research: 'Research',
@@ -16,11 +16,40 @@ const STAGE_LABELS: Record<string, string> = {
 interface ApprovalGateProps {
   runId: string;
   stage: RunStage;
+  approvalRequest?: ApprovalRequest;
   onApproved?: () => void;
   onViewDocs?: () => void;
 }
 
-export function ApprovalGate({ runId, stage, onApproved, onViewDocs }: ApprovalGateProps) {
+function formatTimestamp(timestamp: string | null | undefined): string {
+  if (!timestamp) return 'Pending';
+  return new Date(timestamp).toLocaleString();
+}
+
+function summarizePayload(stage: RunStage, approvalRequest?: ApprovalRequest): string | null {
+  const payload = approvalRequest?.payload;
+  if (!payload) return null;
+
+  if (stage.stage === 'branding' && Array.isArray(payload.candidates)) {
+    return `${payload.candidates.length} domain candidates ready for review`;
+  }
+
+  if (stage.stage === 'ideation' && typeof payload.productName === 'string') {
+    return `Candidate: ${payload.productName}`;
+  }
+
+  if (stage.stage === 'planning') {
+    const phaseCount = Array.isArray(payload.phases) ? payload.phases.length : undefined;
+    const totalTasks = typeof payload.totalTasks === 'number' ? payload.totalTasks : undefined;
+    if (phaseCount != null || totalTasks != null) {
+      return `${phaseCount ?? '?'} phases planned${totalTasks != null ? `, ${totalTasks} tasks` : ''}`;
+    }
+  }
+
+  return null;
+}
+
+export function ApprovalGate({ runId, stage, approvalRequest, onApproved, onViewDocs }: ApprovalGateProps) {
   // Route research stage to the dedicated brief viewer
   if (stage.stage === 'research') {
     return <ResearchBriefViewer runId={runId} stage={stage} onApproved={onApproved} />;
@@ -30,6 +59,7 @@ export function ApprovalGate({ runId, stage, onApproved, onViewDocs }: ApprovalG
   const [rejecting, setRejecting] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [showPrd, setShowPrd] = useState(false);
+  const payloadSummary = summarizePayload(stage, approvalRequest);
 
   // Delegate to DomainPicker for branding stage with candidates
   const ctx = stage.output_context as Record<string, unknown> | null;
@@ -83,6 +113,28 @@ export function ApprovalGate({ runId, stage, onApproved, onViewDocs }: ApprovalG
         <span className="text-terminal-amber">{STAGE_LABELS[stage.stage] || stage.stage}</span>{' '}
         has completed and is awaiting your review.
       </p>
+
+      {approvalRequest && (
+        <div className="mt-3 rounded-lg border border-terminal-amber/20 bg-zinc-950/60 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.24em] text-zinc-500">
+            <span className="text-terminal-amber/90">Request</span>
+            <span className="rounded-full border border-terminal-amber/20 px-2 py-0.5 text-[9px] tracking-[0.2em] text-zinc-300">
+              {approvalRequest.kind}
+            </span>
+            <span className="font-mono text-[9px] text-zinc-600">{approvalRequest.id.slice(0, 8)}</span>
+          </div>
+          <div className="mt-2 text-sm font-semibold text-zinc-100">{approvalRequest.subject}</div>
+          {payloadSummary && (
+            <div className="mt-1 text-[11px] text-zinc-400">{payloadSummary}</div>
+          )}
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-zinc-500">
+            <span>Created {formatTimestamp(approvalRequest.created_at)}</span>
+            <span>
+              Providers {(approvalRequest.policy?.providers?.join(', ') || 'dashboard').toUpperCase()}
+            </span>
+          </div>
+        </div>
+      )}
 
       {stage.output_context && (() => {
         const oc = stage.output_context as Record<string, unknown>;
