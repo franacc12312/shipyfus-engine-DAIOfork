@@ -6,6 +6,7 @@ import { requireAdmin } from '../middleware/auth.js';
 import { env } from '../env.js';
 import { startPipeline, resumePipeline, cancelPipeline, getActivePipelineCount } from '../orchestrator/pipeline.js';
 import { rejectStageSchema, departmentSchema, approveStageSchema, startRunSchema, STAGES } from '@daio/shared';
+import { resolveAllPendingApprovalRequests, resolvePendingApprovalRequest } from '../services/approvals.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
 
@@ -257,6 +258,14 @@ router.post('/:id/cancel', requireAdmin, async (req, res, next) => {
       .single();
 
     if (error) throw error;
+    await resolveAllPendingApprovalRequests({
+      runId: String(req.params.id),
+      decision: { action: 'cancel' },
+      actorId: req.userId,
+      actorName: req.userId,
+      provider: 'dashboard',
+      reason: 'Run cancelled from dashboard',
+    });
     res.json(data);
   } catch (err) {
     next(err);
@@ -344,7 +353,19 @@ router.post('/:id/stages/:stage/approve', requireAdmin, async (req, res, next) =
 
     if (updateError) throw updateError;
 
-    res.json({ status: 'approved', run_id: runId, stage });
+    const requestId = await resolvePendingApprovalRequest({
+      runId,
+      stage: parsed.data,
+      decision: {
+        action: 'approve',
+        chosen_domain: bodyParsed.data.chosen_domain,
+      },
+      actorId: req.userId,
+      actorName: req.userId,
+      provider: 'dashboard',
+    });
+
+    res.json({ status: 'approved', run_id: runId, stage, request_id: requestId });
   } catch (err) {
     next(err);
   }
@@ -417,8 +438,16 @@ router.post('/:id/stages/:stage/reject', requireAdmin, async (req, res, next) =>
         .eq('id', runId);
 
       cancelPipeline(runId);
+      const requestId = await resolvePendingApprovalRequest({
+        runId,
+        stage: stageParsed.data,
+        decision: { action: 'cancel' },
+        actorId: req.userId,
+        actorName: req.userId,
+        provider: 'dashboard',
+      });
 
-      res.json({ status: 'cancelled', run_id: runId, stage });
+      res.json({ status: 'cancelled', run_id: runId, stage, request_id: requestId });
     } else {
       // Retry: reset stage to pending (orchestrator polls and will re-run)
       await db
@@ -431,7 +460,16 @@ router.post('/:id/stages/:stage/reject', requireAdmin, async (req, res, next) =>
         })
         .eq('id', stageData.id);
 
-      res.json({ status: 'retrying', run_id: runId, stage });
+      const requestId = await resolvePendingApprovalRequest({
+        runId,
+        stage: stageParsed.data,
+        decision: { action: 'retry' },
+        actorId: req.userId,
+        actorName: req.userId,
+        provider: 'dashboard',
+      });
+
+      res.json({ status: 'retrying', run_id: runId, stage, request_id: requestId });
     }
   } catch (err) {
     next(err);

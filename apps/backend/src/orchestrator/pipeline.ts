@@ -20,6 +20,7 @@ import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, De
 import { getRandomRetryMessage } from '@daio/shared';
 import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
 import { injectPostHogSnippet } from '../services/posthog.js';
+import { buildStageApprovalRequest, createApprovalService, resolveAllPendingApprovalRequests } from '../services/approvals.js';
 import { createStageContext } from './stage-context.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
@@ -474,6 +475,11 @@ export class PipelineOrchestrator {
     this.cancelled = true;
     this.runner.killAll();
     await this.updateRunStatus('cancelled');
+    await resolveAllPendingApprovalRequests({
+      runId: this.runId,
+      decision: { action: 'cancel' },
+      reason: 'Pipeline cancelled while approval was pending',
+    });
 
     // Set any running/awaiting stages to cancelled
     await db.from('run_stages').update({
@@ -1036,9 +1042,33 @@ export class PipelineOrchestrator {
     const gateKey = `gate_after_${stage}` as keyof HitlConfig;
     if (!config[gateKey]) return;
 
-    // Set stage to awaiting_approval
-    await this.updateStageStatus(stage, 'awaiting_approval');
-    await this.insertLog(stage, `Stage "${stage}" complete. Waiting for human approval before proceeding...`);
+    const { data: stageData, error: stageError } = await db
+      .from('run_stages')
+      .select('status, output_context')
+      .eq('run_id', this.runId)
+      .eq('stage', stage)
+      .single();
+
+    if (stageError) {
+      throw stageError;
+    }
+
+    if (!stageData) {
+      throw new Error(`Stage ${stage} not found before approval gate`);
+    }
+
+    if (stageData.status !== 'awaiting_approval') {
+      await this.updateStageStatus(stage, 'awaiting_approval');
+    }
+
+    const publication = await createApprovalService(this.runId).publish(
+      buildStageApprovalRequest(stage, stageData.output_context ?? {}),
+    );
+
+    await this.insertLog(
+      stage,
+      `Stage "${stage}" complete. Waiting for human approval before proceeding... [request=${publication.requestId}]`,
+    );
 
     // Poll every 3s until approved, retried, or cancelled
     const POLL_INTERVAL = 3000;
@@ -1049,30 +1079,30 @@ export class PipelineOrchestrator {
         throw new Error('Pipeline cancelled while awaiting approval');
       }
 
-      const { data: stageData } = await db
+      const { data: polledStageData } = await db
         .from('run_stages')
         .select('status')
         .eq('run_id', this.runId)
         .eq('stage', stage)
         .single();
 
-      if (!stageData) {
+      if (!polledStageData) {
         throw new Error(`Stage ${stage} not found during approval polling`);
       }
 
-      if (stageData.status === 'completed') {
+      if (polledStageData.status === 'completed') {
         // Approved — continue pipeline
         await this.insertLog(stage, `Approval received for "${stage}". Continuing pipeline.`);
         return;
       }
 
-      if (stageData.status === 'pending') {
+      if (polledStageData.status === 'pending') {
         // Rejected with retry — re-run the stage
         await this.insertLog(stage, `${getRandomRetryMessage()} Retrying "${stage}"...`);
         throw new RetryStageError(stage);
       }
 
-      if (stageData.status === 'cancelled' || stageData.status === 'failed') {
+      if (polledStageData.status === 'cancelled' || polledStageData.status === 'failed') {
         // Rejected with cancel
         throw new Error(`Stage "${stage}" rejected — pipeline cancelled`);
       }

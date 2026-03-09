@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { NoopApprovalService } from '@daio/approval';
 import type { ArtifactStore, StageContext, StageId, StageLogMetadata, StageLogger } from '@daio/pipeline-core';
 import type { AgentRunner } from '../agents/runner.js';
+import { createApprovalService } from '../services/approvals.js';
 
 function formatLogMessage(message: string, metadata?: StageLogMetadata): string {
   if (!metadata || Object.keys(metadata).length === 0) {
@@ -67,7 +67,7 @@ export function createStageContext(params: {
     },
     logger: createLogger(params.log),
     artifacts: createArtifactStore(params.productDir),
-    approvals: new NoopApprovalService(),
+    approvals: createApprovalService(params.runId),
     now: () => new Date().toISOString(),
   };
 }
