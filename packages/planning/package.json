@@ -1,0 +1,23 @@
+{
+  "name": "@daio/planning",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@daio/pipeline-core": "workspace:*",
+    "@daio/shared": "workspace:*",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@daio/approval": "workspace:*",
+    "typescript": "^5.8.0",
+    "vitest": "^3.0.0"
+  }
+}

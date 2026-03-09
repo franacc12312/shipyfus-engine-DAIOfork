@@ -5,12 +5,12 @@ import { env } from '../env.js';
 import { AgentRunner } from '../agents/runner.js';
 import { STAGE_ORDER } from './stages.js';
 import { buildResearcherPrompt } from '../agents/prompts/researcher.js';
-import { buildPlannerPrompt } from '../agents/prompts/planner.js';
 import { buildDeveloperPrompt } from '../agents/prompts/developer.js';
 import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
 import { buildHeraldPrompt } from '../agents/prompts/herald.js';
 import { createIdeationStage } from '@daio/idea';
 import { completeBrandSelection, createBrandingStage, rankCandidates, purchaseDomain, configureDNSForVercel, verifyDomainOwnership } from '@daio/brand';
+import { createPlanningStage } from '@daio/planning';
 import { postTweet } from '@daio/social';
 import { ResearchService, TavilySource, ProductHuntSource, HackerNewsSource, RedditSource } from '@daio/research';
 import type { RawResearchData, ResearchContext } from '@daio/research';
@@ -784,19 +784,33 @@ export class PipelineOrchestrator {
     await this.updateStageStatus('planning', 'running');
 
     try {
-      const prompt = buildPlannerPrompt(prd, config, analytics);
-      const result = await this.runner.runOnce(prompt, {
+      const stage = createPlanningStage();
+      const ctx = createStageContext({
         runId: this.runId,
         stage: 'planning',
-        cwd: productDir,
-        maxBudgetUsd: 5,
+        productDir,
+        runner: this.runner,
+        log: (content) => this.insertLog('planning', content),
+      });
+      const result = await stage.run(ctx, {
+        prd,
+        config,
+        analytics,
         agentId: this.agentMap.get('planning'),
       });
 
+      if (result.status === 'failed') {
+        throw new Error(result.error);
+      }
+
+      if (result.status !== 'completed') {
+        throw new Error('Planning paused unexpectedly');
+      }
+
       await db.from('run_stages').update({
         status: 'completed',
-        output_context: result.json as Record<string, unknown> | null,
-        cost_usd: result.cost,
+        output_context: result.output.plan as Record<string, unknown>,
+        cost_usd: result.output.costUsd,
         completed_at: new Date().toISOString(),
       }).eq('run_id', this.runId).eq('stage', 'planning');
     } catch (err) {

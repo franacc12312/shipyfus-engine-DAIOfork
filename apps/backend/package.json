@@ -17,6 +17,7 @@
     "@daio/brand": "workspace:*",
     "@daio/idea": "workspace:*",
     "@daio/pipeline-core": "workspace:*",
+    "@daio/planning": "workspace:*",
     "@daio/research": "workspace:*",
     "@daio/shared": "workspace:*",
     "@daio/social": "workspace:*",
