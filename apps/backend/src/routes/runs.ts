@@ -39,7 +39,7 @@ router.get('/:id', async (req, res, next) => {
   try {
     const { data, error } = await db
       .from('runs')
-      .select('*, run_stages(*)')
+      .select('*, run_stages(*), approval_requests(*)')
       .eq('id', req.params.id)
       .single();
 

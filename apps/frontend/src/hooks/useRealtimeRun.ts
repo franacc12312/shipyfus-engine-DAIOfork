@@ -1,17 +1,17 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../lib/api';
-import type { Run, RunStage } from '@daio/shared';
+import type { Run } from '@daio/shared';
 
-type RunWithStages = Run & { run_stages: RunStage[] };
+type RunWithRelations = Run;
 
 export function useRealtimeRun(runId: string | undefined) {
-  const [run, setRun] = useState<RunWithStages | null>(null);
+  const [run, setRun] = useState<RunWithRelations | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchRun = useCallback(async () => {
     if (!runId) return;
     try {
-      const data = await api.get<RunWithStages>(`/runs/${runId}`);
+      const data = await api.get<RunWithRelations>(`/runs/${runId}`);
       setRun(data);
     } catch (err) {
       console.error('Failed to fetch run:', err);

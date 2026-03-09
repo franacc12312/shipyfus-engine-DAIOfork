@@ -30,6 +30,7 @@ export interface Run {
   metadata: Record<string, unknown>;
   // Joined
   run_stages?: RunStage[];
+  approval_requests?: ApprovalRequest[];
 }
 
 export interface RunStage {
@@ -45,6 +46,37 @@ export interface RunStage {
   started_at: string | null;
   completed_at: string | null;
   created_at: string;
+}
+
+export interface ApprovalPolicy {
+  providers: Array<'dashboard' | 'telegram'>;
+  quorum?: number;
+  expiresAt?: string;
+}
+
+export type ApprovalKind = 'approve-reject' | 'select-one' | 'rank';
+export type ApprovalRequestStatus = 'pending' | 'resolved';
+export type ApprovalOutcome = 'approved' | 'retry' | 'cancel';
+
+export interface ApprovalRequest {
+  id: string;
+  run_id: string;
+  stage: Department;
+  request_key: string;
+  kind: ApprovalKind;
+  subject: string;
+  payload: Record<string, unknown> | null;
+  policy: ApprovalPolicy | null;
+  status: ApprovalRequestStatus;
+  outcome: ApprovalOutcome | null;
+  decision: Record<string, unknown> | null;
+  provider: 'dashboard' | 'telegram' | null;
+  actor_id: string | null;
+  actor_name: string | null;
+  reason: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AgentCharacteristics {
