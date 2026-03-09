@@ -11,9 +11,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@daio/pipeline-core": "workspace:*",
+    "@daio/shared": "workspace:*",
     "whoiser": "2.0.0-beta.10"
   },
   "devDependencies": {
+    "@daio/approval": "workspace:*",
     "typescript": "^5.8.0",
     "vitest": "^3.0.0"
   }

@@ -177,10 +177,19 @@ importers:
 
   packages/brand:
     dependencies:
+      '@daio/pipeline-core':
+        specifier: workspace:*
+        version: link:../pipeline-core
+      '@daio/shared':
+        specifier: workspace:*
+        version: link:../shared
       whoiser:
         specifier: 2.0.0-beta.10
         version: 2.0.0-beta.10
     devDependencies:
+      '@daio/approval':
+        specifier: workspace:*
+        version: link:../approval
       typescript:
         specifier: ^5.8.0
         version: 5.9.3
