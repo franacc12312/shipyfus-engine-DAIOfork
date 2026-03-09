@@ -4,13 +4,13 @@ import { db } from '../services/db.js';
 import { env } from '../env.js';
 import { AgentRunner } from '../agents/runner.js';
 import { STAGE_ORDER } from './stages.js';
-import { buildIdeatorPrompt } from '../agents/prompts/ideator.js';
 import { buildResearcherPrompt } from '../agents/prompts/researcher.js';
 import { buildPlannerPrompt } from '../agents/prompts/planner.js';
 import { buildDeveloperPrompt } from '../agents/prompts/developer.js';
 import { buildDeployerPrompt } from '../agents/prompts/deployer.js';
 import { buildHeraldPrompt } from '../agents/prompts/herald.js';
 import { buildBranderPrompt, buildCFOPrompt } from '../agents/prompts/brander.js';
+import { createIdeationStage } from '@daio/idea';
 import { rankCandidates, purchaseDomain, configureDNSForVercel, verifyDomainOwnership } from '@daio/brand';
 import { postTweet } from '@daio/social';
 import { ResearchService, TavilySource, ProductHuntSource, HackerNewsSource, RedditSource } from '@daio/research';
@@ -21,6 +21,7 @@ import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, De
 import { getRandomRetryMessage } from '@daio/shared';
 import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
 import { injectPostHogSnippet } from '../services/posthog.js';
+import { createStageContext } from './stage-context.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
 
@@ -562,25 +563,34 @@ export class PipelineOrchestrator {
     await this.updateStageStatus('ideation', 'running');
 
     try {
-      const prompt = buildIdeatorPrompt(config, researchMarkdown ?? undefined);
-      const result = await this.runner.runOnce(prompt, {
-        runId: this.runId,
-        stage: 'ideation',
-        cwd: productDir,
-        maxBudgetUsd: 3,
-        agentId: this.agentMap.get('ideation'),
-      });
+      const stage = createIdeationStage();
+      const result = await stage.run(
+        createStageContext({
+          runId: this.runId,
+          stage: 'ideation',
+          productDir,
+          runner: this.runner,
+          log: (content) => this.insertLog('ideation', content),
+        }),
+        {
+          config,
+          researchMarkdown,
+          maxBudgetUsd: 3,
+          agentId: this.agentMap.get('ideation'),
+        },
+      );
 
-      const prd = result.json as ProductPRD;
-      if (!prd || !prd.productName) {
-        throw new Error('Ideation failed to produce a valid PRD');
+      if (result.status !== 'completed') {
+        throw new Error(result.status === 'failed' ? result.error : 'Ideation is awaiting approval');
       }
+
+      const { prd, costUsd } = result.output;
 
       // Store PRD in stage output and update run summary
       await db.from('run_stages').update({
         status: 'completed',
         output_context: prd as unknown as Record<string, unknown>,
-        cost_usd: result.cost,
+        cost_usd: costUsd,
         completed_at: new Date().toISOString(),
       }).eq('run_id', this.runId).eq('stage', 'ideation');
 
