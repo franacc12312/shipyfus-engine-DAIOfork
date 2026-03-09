@@ -21,6 +21,11 @@ do $$ begin
   end if;
 end $$;
 
+-- Ensure the default owner exists before seeding the participant row.
+insert into public.users (id, email, role)
+values ('00000000-0000-0000-0000-000000000001', 'owner@daio.local', 'owner')
+on conflict (id) do nothing;
+
 -- Seed the owner as the first participant
 insert into public.participants (user_id, name, role_title, display_order)
 values ('00000000-0000-0000-0000-000000000001', 'De Vinci', 'Founder', 0)
