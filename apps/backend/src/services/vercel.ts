@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+
 const VERCEL_API = 'https://api.vercel.com';
 
 /** Extract a likely project name from a Vercel deployment URL.
@@ -158,4 +160,47 @@ export async function getProjectByDeployment(
   }
 
   return { success: false, error: result.error ?? `HTTP ${result.status}` };
+}
+
+export interface PreviewDeployResult {
+  url: string | null;
+  error?: string;
+}
+
+/** Deploy a directory to Vercel as a preview (non-production) deployment.
+ *  Runs `npx vercel --yes` without `--prod` so it creates an ephemeral preview URL. */
+export async function deployPreview(
+  productDir: string,
+  token: string,
+  timeoutMs = 120_000,
+): Promise<PreviewDeployResult> {
+  return new Promise((resolve) => {
+    const child = execFile(
+      'npx',
+      ['vercel', '--yes', '--token', token],
+      { cwd: productDir, timeout: timeoutMs },
+      (error, stdout, stderr) => {
+        if (error) {
+          resolve({
+            url: null,
+            error: `Preview deploy failed: ${error.message}${stderr ? ` — ${stderr.trim()}` : ''}`,
+          });
+          return;
+        }
+
+        // Vercel CLI prints the deployment URL as the last line of stdout
+        const url = stdout.trim().split('\n').pop()?.trim() ?? null;
+        if (url && url.startsWith('https://')) {
+          resolve({ url });
+        } else {
+          resolve({ url: null, error: `Unexpected Vercel output: ${stdout.trim()}` });
+        }
+      },
+    );
+
+    // Safety: if the process hangs, kill it
+    child.on('error', (err) => {
+      resolve({ url: null, error: `Failed to spawn vercel CLI: ${err.message}` });
+    });
+  });
 }

@@ -13,6 +13,7 @@ import {
   participantSchema,
   createParticipantSchema,
   stageStatusSchema,
+  stageInteractionModeSchema,
   hitlConfigSchema,
   updateHitlConfigSchema,
   hitlGateActionSchema,
@@ -20,6 +21,8 @@ import {
   domainChoiceSchema,
   approveStageSchema,
   startRunSchema,
+  stageMessageSchema,
+  submitStageMessageSchema,
 } from '../schemas.js';
 import { STAGES, RUN_STATUSES, STAGE_STATUSES, AGENT_SLUGS, STAGE_AGENT_MAP } from '../constants.js';
 
@@ -207,7 +210,7 @@ describe('constants', () => {
     expect(RUN_STATUSES).toContain('cancelled');
   });
 
-  it('STAGE_STATUSES has all expected values including awaiting_approval and cancelled', () => {
+  it('STAGE_STATUSES has all expected values including awaiting_approval, awaiting_input, and cancelled', () => {
     expect(STAGE_STATUSES).toContain('pending');
     expect(STAGE_STATUSES).toContain('running');
     expect(STAGE_STATUSES).toContain('completed');
@@ -215,18 +218,31 @@ describe('constants', () => {
     expect(STAGE_STATUSES).toContain('cancelled');
     expect(STAGE_STATUSES).toContain('skipped');
     expect(STAGE_STATUSES).toContain('awaiting_approval');
+    expect(STAGE_STATUSES).toContain('awaiting_input');
   });
 });
 
 describe('stageStatusSchema', () => {
-  it('validates all stage statuses including cancelled and awaiting_approval', () => {
-    for (const status of ['pending', 'running', 'completed', 'failed', 'cancelled', 'skipped', 'awaiting_approval']) {
+  it('validates all stage statuses including cancelled, awaiting_approval, and awaiting_input', () => {
+    for (const status of ['pending', 'running', 'completed', 'failed', 'cancelled', 'skipped', 'awaiting_approval', 'awaiting_input']) {
       expect(stageStatusSchema.parse(status)).toBe(status);
     }
   });
 
   it('rejects invalid stage status', () => {
     expect(() => stageStatusSchema.parse('paused')).toThrow();
+  });
+});
+
+describe('stageInteractionModeSchema', () => {
+  it('validates all supported interaction modes', () => {
+    for (const mode of ['automatic', 'approval', 'interactive']) {
+      expect(stageInteractionModeSchema.parse(mode)).toBe(mode);
+    }
+  });
+
+  it('rejects unsupported interaction modes', () => {
+    expect(() => stageInteractionModeSchema.parse('manual')).toThrow();
   });
 });
 
@@ -240,6 +256,12 @@ describe('hitlConfigSchema', () => {
       gate_after_planning: false,
       gate_after_development: true,
       gate_after_deployment: false,
+      research_mode: 'approval',
+      ideation_mode: 'interactive',
+      branding_mode: 'approval',
+      planning_mode: 'automatic',
+      development_mode: 'approval',
+      deployment_mode: 'automatic',
     };
     expect(hitlConfigSchema.parse(config)).toEqual(config);
   });
@@ -283,6 +305,10 @@ describe('updateHitlConfigSchema', () => {
 
   it('accepts partial update with gate_after_branding', () => {
     expect(updateHitlConfigSchema.parse({ gate_after_branding: false })).toEqual({ gate_after_branding: false });
+  });
+
+  it('accepts partial update with ideation_mode', () => {
+    expect(updateHitlConfigSchema.parse({ ideation_mode: 'interactive' })).toEqual({ ideation_mode: 'interactive' });
   });
 
   it('accepts empty object (no changes)', () => {
@@ -334,6 +360,33 @@ describe('rejectStageSchema', () => {
     expect(STAGE_AGENT_MAP.development).toBe('developer');
     expect(STAGE_AGENT_MAP.deployment).toBe('deployer');
     expect(STAGE_AGENT_MAP.distribution).toBe('herald');
+  });
+});
+
+describe('stageMessageSchema', () => {
+  it('validates a stage message row', () => {
+    const message = {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      run_id: '550e8400-e29b-41d4-a716-446655440001',
+      stage: 'ideation',
+      role: 'user',
+      kind: 'message',
+      content: 'Push the idea more toward B2B operations.',
+      metadata: {},
+      created_by: '00000000-0000-0000-0000-000000000001',
+      created_at: '2026-03-10T00:00:00.000Z',
+    };
+    expect(stageMessageSchema.parse(message)).toEqual(message);
+  });
+});
+
+describe('submitStageMessageSchema', () => {
+  it('accepts non-empty content', () => {
+    expect(submitStageMessageSchema.parse({ content: 'Refine the audience.' })).toEqual({ content: 'Refine the audience.' });
+  });
+
+  it('rejects blank content', () => {
+    expect(() => submitStageMessageSchema.parse({ content: '   ' })).toThrow();
   });
 });
 

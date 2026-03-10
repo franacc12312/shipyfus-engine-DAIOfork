@@ -16,11 +16,12 @@ import { ResearchService, TavilySource, ProductHuntSource, HackerNewsSource, Red
 import type { RawResearchData, ResearchContext } from '@daio/research';
 import type { PorkbunConfig } from '@daio/brand';
 import type { TwitterConfig } from '@daio/social';
-import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, DistributionConfig, AnalyticsConfig, ProductPRD, Department, HitlConfig, DomainChoice } from '@daio/shared';
+import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, DistributionConfig, AnalyticsConfig, ProductPRD, Department, HitlConfig, DomainChoice, StageInteractionMode } from '@daio/shared';
 import { getRandomRetryMessage } from '@daio/shared';
-import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
+import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl, deployPreview } from '../services/vercel.js';
 import { injectPostHogSnippet } from '../services/posthog.js';
 import { buildStageApprovalRequest, createApprovalService, resolveAllPendingApprovalRequests } from '../services/approvals.js';
+import { appendStageMessage, formatPrdDraft, listStageMessages } from '../services/stage-messages.js';
 import { createStageContext } from './stage-context.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
@@ -300,7 +301,7 @@ export class PipelineOrchestrator {
       researchMarkdown = (researchStage.output_context as { markdown?: string }).markdown ?? null;
     } else if (researchStage?.status === 'skipped') {
       console.log(`Run ${this.runId}: research was skipped`);
-    } else if (researchStage?.status === 'awaiting_approval') {
+    } else if (researchStage?.status === 'awaiting_approval' || researchStage?.status === 'awaiting_input') {
       researchMarkdown = (researchStage.output_context as { markdown?: string })?.markdown ?? null;
       await this.checkApprovalGate('research');
     } else if (researchStage?.status === 'failed') {
@@ -319,8 +320,7 @@ export class PipelineOrchestrator {
     if (ideationStage?.status === 'completed' && ideationStage.output_context) {
       console.log(`Run ${this.runId}: skipping completed ideation`);
       prd = ideationStage.output_context as unknown as ProductPRD;
-    } else if (ideationStage?.status === 'awaiting_approval') {
-      // Resume polling for approval
+    } else if (ideationStage?.status === 'awaiting_approval' || ideationStage?.status === 'awaiting_input') {
       prd = ideationStage.output_context as unknown as ProductPRD;
       await this.checkApprovalGate('ideation');
     } else if (ideationStage?.status === 'failed') {
@@ -347,7 +347,7 @@ export class PipelineOrchestrator {
         prd = purchaseResult.prd;
         domainName = purchaseResult.domainName;
       }
-    } else if (brandingStage?.status === 'awaiting_approval') {
+    } else if (brandingStage?.status === 'awaiting_approval' || brandingStage?.status === 'awaiting_input') {
       await this.checkApprovalGate('branding');
       // After approval, read chosen domain and purchase
       const freshCtx = await this.getBrandingOutputContext();
@@ -386,7 +386,7 @@ export class PipelineOrchestrator {
     const planningStage = getStatus('planning');
     if (planningStage?.status === 'completed') {
       console.log(`Run ${this.runId}: skipping completed planning`);
-    } else if (planningStage?.status === 'awaiting_approval') {
+    } else if (planningStage?.status === 'awaiting_approval' || planningStage?.status === 'awaiting_input') {
       await this.checkApprovalGate('planning');
     } else if (planningStage?.status === 'failed') {
       throw new Error('Planning previously failed');
@@ -400,14 +400,16 @@ export class PipelineOrchestrator {
     const devStage = getStatus('development');
     if (devStage?.status === 'completed') {
       console.log(`Run ${this.runId}: skipping completed development`);
-    } else if (devStage?.status === 'awaiting_approval') {
-      await this.checkApprovalGate('development');
+    } else if (devStage?.status === 'awaiting_approval' || devStage?.status === 'awaiting_input') {
+      const existingPreviewUrl = await this.getExistingPreviewUrl('development');
+      await this.checkApprovalGate('development', existingPreviewUrl);
     } else if (devStage?.status === 'failed') {
       throw new Error('Development previously failed');
     } else {
       if (this.cancelled) return;
       await this.runDevelopment(constraints.development, productDir, prd.productName);
-      await this.checkApprovalGate('development');
+      const previewUrl = await this.deployPreviewIfNeeded(productDir);
+      await this.checkApprovalGate('development', previewUrl);
     }
 
     // Inject PostHog analytics snippet into built product (before deployment)
@@ -456,7 +458,7 @@ export class PipelineOrchestrator {
     const distStage = getStatus('distribution');
     if (distStage?.status === 'completed') {
       console.log(`Run ${this.runId}: skipping completed distribution`);
-    } else if (distStage?.status === 'awaiting_approval') {
+    } else if (distStage?.status === 'awaiting_approval' || distStage?.status === 'awaiting_input') {
       await this.checkApprovalGate('distribution');
     } else if (distStage?.status === 'failed') {
       throw new Error('Distribution previously failed');
@@ -485,7 +487,7 @@ export class PipelineOrchestrator {
     await db.from('run_stages').update({
       status: 'cancelled',
       completed_at: new Date().toISOString(),
-    }).eq('run_id', this.runId).in('status', ['running', 'awaiting_approval']);
+    }).eq('run_id', this.runId).in('status', ['running', 'awaiting_approval', 'awaiting_input']);
   }
 
   private async runResearch(config: ResearchConfig, ideationConfig: IdeationConfig, productDir: string): Promise<string | null> {
@@ -572,6 +574,10 @@ export class PipelineOrchestrator {
     await this.updateStageStatus('ideation', 'running');
 
     try {
+      const interactionMode = await this.getStageInteractionMode('ideation');
+      const revision = interactionMode === 'interactive'
+        ? await this.getIdeationRevisionContext()
+        : { previousPrd: undefined, feedback: [] };
       const stage = createIdeationStage();
       const result = await stage.run(
         createStageContext({
@@ -584,6 +590,8 @@ export class PipelineOrchestrator {
         {
           config,
           researchMarkdown,
+          previousPrd: revision.previousPrd,
+          feedback: revision.feedback,
           maxBudgetUsd: 3,
           agentId: this.agentMap.get('ideation'),
         },
@@ -607,6 +615,10 @@ export class PipelineOrchestrator {
         idea_summary: prd.productDescription,
       }).eq('id', this.runId);
 
+      if (interactionMode === 'interactive') {
+        await this.appendIdeationDraftMessage(prd);
+      }
+
       return prd;
     } catch (err) {
       if (!this.cancelled) await this.updateStageStatus('ideation', 'failed');
@@ -618,13 +630,8 @@ export class PipelineOrchestrator {
     await this.updateStageStatus('branding', 'running');
 
     try {
-      const { data: hitlData } = await db
-        .from('hitl_config')
-        .select('*')
-        .limit(1)
-        .single();
-
-      const hitlEnabled = hitlData?.enabled && (hitlData as HitlConfig).gate_after_branding;
+      const brandingInteractionMode = await this.getStageInteractionMode('branding');
+      const hitlEnabled = brandingInteractionMode !== 'automatic';
       const stage = createBrandingStage();
       const result = await stage.run(
         createStageContext({
@@ -1046,19 +1053,13 @@ export class PipelineOrchestrator {
     }
   }
 
-  async checkApprovalGate(stage: Department): Promise<void> {
-    // Read HITL config
-    const { data: hitlConfig } = await db
-      .from('hitl_config')
-      .select('*')
-      .limit(1)
-      .single();
-
-    if (!hitlConfig || !hitlConfig.enabled) return;
-
-    const config = hitlConfig as HitlConfig;
-    const gateKey = `gate_after_${stage}` as keyof HitlConfig;
-    if (!config[gateKey]) return;
+  async checkApprovalGate(stage: Department, previewUrl?: string | null): Promise<void> {
+    const interactionMode = await this.getStageInteractionMode(stage);
+    if (interactionMode === 'automatic') return;
+    if (interactionMode === 'interactive') {
+      await this.checkInteractiveGate(stage);
+      return;
+    }
 
     const { data: stageData, error: stageError } = await db
       .from('run_stages')
@@ -1083,9 +1084,17 @@ export class PipelineOrchestrator {
       buildStageApprovalRequest(stage, stageData.output_context ?? {}),
     );
 
+    // Store preview URL on the approval request if provided
+    if (previewUrl) {
+      await db
+        .from('approval_requests')
+        .update({ preview_url: previewUrl })
+        .eq('id', publication.requestId);
+    }
+
     await this.insertLog(
       stage,
-      `Stage "${stage}" complete. Waiting for human approval before proceeding... [request=${publication.requestId}]`,
+      `Stage "${stage}" complete. Waiting for human approval before proceeding...${previewUrl ? ` Preview: ${previewUrl}` : ''} [request=${publication.requestId}]`,
     );
 
     // Poll every 3s until approved, retried, or cancelled
@@ -1129,6 +1138,193 @@ export class PipelineOrchestrator {
     }
 
     throw new Error('Pipeline cancelled while awaiting approval');
+  }
+
+  private async checkInteractiveGate(stage: Department): Promise<void> {
+    const { data: stageData, error: stageError } = await db
+      .from('run_stages')
+      .select('status')
+      .eq('run_id', this.runId)
+      .eq('stage', stage)
+      .single();
+
+    if (stageError) {
+      throw stageError;
+    }
+
+    if (!stageData) {
+      throw new Error(`Stage ${stage} not found before interactive gate`);
+    }
+
+    if (stageData.status !== 'awaiting_input') {
+      await this.updateStageStatus(stage, 'awaiting_input');
+    }
+
+    await this.insertLog(
+      stage,
+      `Stage "${stage}" complete. Waiting for human feedback before proceeding...`,
+    );
+
+    const POLL_INTERVAL = 3000;
+    while (!this.cancelled) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
+
+      if (this.cancelled) {
+        throw new Error('Pipeline cancelled while awaiting input');
+      }
+
+      const { data: polledStageData } = await db
+        .from('run_stages')
+        .select('status')
+        .eq('run_id', this.runId)
+        .eq('stage', stage)
+        .single();
+
+      if (!polledStageData) {
+        throw new Error(`Stage ${stage} not found during interactive polling`);
+      }
+
+      if (polledStageData.status === 'completed') {
+        await this.insertLog(stage, `Human review complete for "${stage}". Continuing pipeline.`);
+        return;
+      }
+
+      if (polledStageData.status === 'pending') {
+        await this.insertLog(stage, `Human feedback received for "${stage}". Revising stage output...`);
+        throw new RetryStageError(stage);
+      }
+
+      if (polledStageData.status === 'cancelled' || polledStageData.status === 'failed') {
+        throw new Error(`Stage "${stage}" rejected — pipeline cancelled`);
+      }
+    }
+
+    throw new Error('Pipeline cancelled while awaiting input');
+  }
+
+  private async readHitlConfig(): Promise<HitlConfig | null> {
+    const { data } = await db
+      .from('hitl_config')
+      .select('*')
+      .limit(1)
+      .single();
+
+    return (data as HitlConfig | null) ?? null;
+  }
+
+  private getLegacyGateEnabled(config: HitlConfig, stage: Department): boolean {
+    const gateKey = `gate_after_${stage}` as keyof HitlConfig;
+    return config[gateKey] === true;
+  }
+
+  private supportsInteractiveStage(stage: Department): boolean {
+    return stage === 'ideation';
+  }
+
+  private async getStageInteractionMode(stage: Department): Promise<StageInteractionMode> {
+    const config = await this.readHitlConfig();
+    if (!config || !config.enabled) {
+      return 'automatic';
+    }
+
+    const modeKey = `${stage}_mode` as keyof HitlConfig;
+    const configuredMode = config[modeKey];
+    const mode = (
+      configuredMode === 'automatic'
+      || configuredMode === 'approval'
+      || configuredMode === 'interactive'
+    )
+      ? configuredMode
+      : (this.getLegacyGateEnabled(config, stage) ? 'approval' : 'automatic');
+
+    if (mode === 'interactive' && !this.supportsInteractiveStage(stage)) {
+      return 'approval';
+    }
+
+    return mode;
+  }
+
+  private async getIdeationRevisionContext(): Promise<{ previousPrd?: ProductPRD; feedback: string[] }> {
+    const { data: stageData } = await db
+      .from('run_stages')
+      .select('output_context')
+      .eq('run_id', this.runId)
+      .eq('stage', 'ideation')
+      .single();
+
+    const previousPrd = stageData?.output_context
+      ? stageData.output_context as unknown as ProductPRD
+      : undefined;
+    const messages = await listStageMessages(this.runId, 'ideation');
+
+    let lastDraftIndex = -1;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].role === 'assistant' && messages[index].kind === 'prd_draft') {
+        lastDraftIndex = index;
+        break;
+      }
+    }
+
+    const feedback = messages
+      .slice(lastDraftIndex + 1)
+      .filter((message) => message.role === 'user')
+      .map((message) => message.content);
+
+    return { previousPrd, feedback };
+  }
+
+  private async appendIdeationDraftMessage(prd: ProductPRD): Promise<void> {
+    const existingMessages = await listStageMessages(this.runId, 'ideation');
+    const revision = existingMessages.filter((message) => message.kind === 'prd_draft').length + 1;
+
+    await appendStageMessage({
+      runId: this.runId,
+      stage: 'ideation',
+      role: 'assistant',
+      kind: 'prd_draft',
+      content: formatPrdDraft(prd),
+      metadata: {
+        revision,
+        productName: prd.productName,
+      },
+    });
+  }
+
+  private async deployPreviewIfNeeded(productDir: string): Promise<string | null> {
+    if (!env.VERCEL_TOKEN) {
+      await this.insertLog('development', 'Preview deploy skipped: no VERCEL_TOKEN configured');
+      return null;
+    }
+
+    // Only deploy preview if HITL gate is enabled for development
+    const interactionMode = await this.getStageInteractionMode('development');
+    if (interactionMode === 'automatic') {
+      return null;
+    }
+
+    await this.insertLog('development', 'Deploying preview to Vercel...');
+
+    const result = await deployPreview(productDir, env.VERCEL_TOKEN);
+
+    if (result.url) {
+      await this.insertLog('development', `Preview deployed: ${result.url}`);
+      return result.url;
+    }
+
+    await this.insertLog('development', `Preview deploy failed (non-fatal): ${result.error}`);
+    return null;
+  }
+
+  private async getExistingPreviewUrl(stage: Department): Promise<string | null> {
+    const { data } = await db
+      .from('approval_requests')
+      .select('preview_url')
+      .eq('run_id', this.runId)
+      .eq('stage', stage)
+      .eq('status', 'pending')
+      .single();
+
+    return (data?.preview_url as string) ?? null;
   }
 
   private async insertLog(stage: string, content: string, opts?: { event_type?: string; agent_id?: string }): Promise<void> {
@@ -1178,7 +1374,7 @@ export class PipelineOrchestrator {
     if (status === 'completed' || status === 'failed' || status === 'cancelled') {
       updates.completed_at = new Date().toISOString();
     }
-    // awaiting_approval: no timestamp changes
+    // awaiting_approval / awaiting_input: no timestamp changes
     await db.from('run_stages').update(updates).eq('run_id', this.runId).eq('stage', stage);
   }
 }
