@@ -112,7 +112,9 @@ export const createParticipantSchema = z.object({
 
 // HITL schemas
 
-export const stageStatusSchema = z.enum(['pending', 'running', 'completed', 'failed', 'cancelled', 'skipped', 'awaiting_approval']);
+export const stageStatusSchema = z.enum(['pending', 'running', 'completed', 'failed', 'cancelled', 'skipped', 'awaiting_approval', 'awaiting_input']);
+
+export const stageInteractionModeSchema = z.enum(['automatic', 'approval', 'interactive']);
 
 export const hitlConfigSchema = z.object({
   enabled: z.boolean(),
@@ -122,6 +124,12 @@ export const hitlConfigSchema = z.object({
   gate_after_planning: z.boolean(),
   gate_after_development: z.boolean(),
   gate_after_deployment: z.boolean(),
+  research_mode: stageInteractionModeSchema.optional(),
+  ideation_mode: stageInteractionModeSchema.optional(),
+  branding_mode: stageInteractionModeSchema.optional(),
+  planning_mode: stageInteractionModeSchema.optional(),
+  development_mode: stageInteractionModeSchema.optional(),
+  deployment_mode: stageInteractionModeSchema.optional(),
 });
 
 export const updateHitlConfigSchema = z.object({
@@ -132,6 +140,12 @@ export const updateHitlConfigSchema = z.object({
   gate_after_planning: z.boolean().optional(),
   gate_after_development: z.boolean().optional(),
   gate_after_deployment: z.boolean().optional(),
+  research_mode: stageInteractionModeSchema.optional(),
+  ideation_mode: stageInteractionModeSchema.optional(),
+  branding_mode: stageInteractionModeSchema.optional(),
+  planning_mode: stageInteractionModeSchema.optional(),
+  development_mode: stageInteractionModeSchema.optional(),
+  deployment_mode: stageInteractionModeSchema.optional(),
 });
 
 export const hitlGateActionSchema = z.enum(['approve', 'retry', 'cancel']);
@@ -164,4 +178,24 @@ export const startRunSchema = z.object({
 
 export const rejectStageSchema = z.object({
   action: z.enum(['retry', 'cancel']),
+});
+
+export const stageMessageRoleSchema = z.enum(['system', 'assistant', 'user']);
+
+export const stageMessageKindSchema = z.enum(['message', 'prd_draft']);
+
+export const stageMessageSchema = z.object({
+  id: z.string().uuid(),
+  run_id: z.string().uuid(),
+  stage: departmentSchema,
+  role: stageMessageRoleSchema,
+  kind: stageMessageKindSchema,
+  content: z.string().min(1),
+  metadata: z.record(z.unknown()),
+  created_by: z.string().nullable(),
+  created_at: z.string(),
+});
+
+export const submitStageMessageSchema = z.object({
+  content: z.string().trim().min(1).max(4000),
 });

@@ -1,0 +1,3 @@
+{"ts":"2026-03-09T16:35:25.182Z","stream":"stderr","chunk":"[paperclip] Loaded agent instructions file: /Users/devinci/DAIO/agents/ceo/AGENTS.md\n"}
+{"ts":"2026-03-09T16:35:25.330Z","stream":"stdout","chunk":"{\"type\":\"thread.started\",\"thread_id\":\"019cd342-3dc4-7650-ac7c-537bc9984978\"}\n"}
+{"ts":"2026-03-09T16:35:25.331Z","stream":"stdout","chunk":"{\"type\":\"turn.started\"}\n"}

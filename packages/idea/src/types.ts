@@ -17,6 +17,8 @@ export interface IdeaCandidate {
 export interface IdeationStageInput {
   config: IdeationConfig;
   researchMarkdown?: string | null;
+  previousPrd?: ProductPRD;
+  feedback?: string[];
   maxBudgetUsd?: number;
   agentId?: string;
 }

@@ -5,8 +5,9 @@ import { db } from '../services/db.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { env } from '../env.js';
 import { startPipeline, resumePipeline, cancelPipeline, getActivePipelineCount } from '../orchestrator/pipeline.js';
-import { rejectStageSchema, departmentSchema, approveStageSchema, startRunSchema, STAGES } from '@daio/shared';
+import { rejectStageSchema, departmentSchema, approveStageSchema, startRunSchema, STAGES, submitStageMessageSchema } from '@daio/shared';
 import { resolveAllPendingApprovalRequests, resolvePendingApprovalRequest } from '../services/approvals.js';
+import { appendStageMessage, listStageMessages } from '../services/stage-messages.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
 
@@ -39,7 +40,7 @@ router.get('/:id', async (req, res, next) => {
   try {
     const { data, error } = await db
       .from('runs')
-      .select('*, run_stages(*), approval_requests(*)')
+      .select('*, run_stages(*), approval_requests(*), stage_messages(*)')
       .eq('id', req.params.id)
       .single();
 
@@ -407,7 +408,7 @@ router.post('/:id/stages/:stage/reject', requireAdmin, async (req, res, next) =>
       return;
     }
 
-    // Verify stage is awaiting approval
+    // Verify stage is awaiting approval or input
     const { data: stageData, error: stageError } = await db
       .from('run_stages')
       .select('id, status')
@@ -420,8 +421,8 @@ router.post('/:id/stages/:stage/reject', requireAdmin, async (req, res, next) =>
       return;
     }
 
-    if (stageData.status !== 'awaiting_approval') {
-      res.status(400).json({ error: `Stage is not awaiting approval (current: ${stageData.status})` });
+    if (stageData.status !== 'awaiting_approval' && stageData.status !== 'awaiting_input') {
+      res.status(400).json({ error: `Stage is not awaiting review (current: ${stageData.status})` });
       return;
     }
 
@@ -438,14 +439,16 @@ router.post('/:id/stages/:stage/reject', requireAdmin, async (req, res, next) =>
         .eq('id', runId);
 
       cancelPipeline(runId);
-      const requestId = await resolvePendingApprovalRequest({
-        runId,
-        stage: stageParsed.data,
-        decision: { action: 'cancel' },
-        actorId: req.userId,
-        actorName: req.userId,
-        provider: 'dashboard',
-      });
+      const requestId = stageData.status === 'awaiting_approval'
+        ? await resolvePendingApprovalRequest({
+          runId,
+          stage: stageParsed.data,
+          decision: { action: 'cancel' },
+          actorId: req.userId,
+          actorName: req.userId,
+          provider: 'dashboard',
+        })
+        : null;
 
       res.json({ status: 'cancelled', run_id: runId, stage, request_id: requestId });
     } else {
@@ -460,17 +463,157 @@ router.post('/:id/stages/:stage/reject', requireAdmin, async (req, res, next) =>
         })
         .eq('id', stageData.id);
 
-      const requestId = await resolvePendingApprovalRequest({
-        runId,
-        stage: stageParsed.data,
-        decision: { action: 'retry' },
-        actorId: req.userId,
-        actorName: req.userId,
-        provider: 'dashboard',
-      });
+      const requestId = stageData.status === 'awaiting_approval'
+        ? await resolvePendingApprovalRequest({
+          runId,
+          stage: stageParsed.data,
+          decision: { action: 'retry' },
+          actorId: req.userId,
+          actorName: req.userId,
+          provider: 'dashboard',
+        })
+        : null;
 
       res.json({ status: 'retrying', run_id: runId, stage, request_id: requestId });
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/stages/:stage/messages', requireAdmin, async (req, res, next) => {
+  try {
+    const runId = String(req.params.id);
+    const stage = String(req.params.stage);
+
+    const stageParsed = departmentSchema.safeParse(stage);
+    if (!stageParsed.success) {
+      res.status(400).json({ error: 'Invalid stage' });
+      return;
+    }
+
+    const bodyParsed = submitStageMessageSchema.safeParse(req.body || {});
+    if (!bodyParsed.success) {
+      res.status(400).json({ error: 'Invalid body, requires non-empty { content }' });
+      return;
+    }
+
+    const { data: stageData, error: stageError } = await db
+      .from('run_stages')
+      .select('status')
+      .eq('run_id', runId)
+      .eq('stage', stage)
+      .single();
+
+    if (stageError || !stageData) {
+      res.status(404).json({ error: 'Stage not found' });
+      return;
+    }
+
+    if (stageData.status !== 'awaiting_input') {
+      res.status(400).json({ error: `Stage is not awaiting input (current: ${stageData.status})` });
+      return;
+    }
+
+    await appendStageMessage({
+      runId,
+      stage: stageParsed.data,
+      role: 'user',
+      content: bodyParsed.data.content,
+      createdBy: req.userId,
+    });
+
+    res.status(201).json({ status: 'saved', run_id: runId, stage });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/stages/:stage/continue', requireAdmin, async (req, res, next) => {
+  try {
+    const runId = String(req.params.id);
+    const stage = String(req.params.stage);
+
+    const stageParsed = departmentSchema.safeParse(stage);
+    if (!stageParsed.success) {
+      res.status(400).json({ error: 'Invalid stage' });
+      return;
+    }
+
+    const { data: run, error: runError } = await db
+      .from('runs')
+      .select('status')
+      .eq('id', runId)
+      .single();
+
+    if (runError || !run) {
+      res.status(404).json({ error: 'Run not found' });
+      return;
+    }
+
+    if (run.status !== 'running') {
+      res.status(400).json({ error: `Cannot continue stage for run with status: ${run.status}` });
+      return;
+    }
+
+    const { data: stageData, error: stageError } = await db
+      .from('run_stages')
+      .select('id, status')
+      .eq('run_id', runId)
+      .eq('stage', stage)
+      .single();
+
+    if (stageError || !stageData) {
+      res.status(404).json({ error: 'Stage not found' });
+      return;
+    }
+
+    if (stageData.status !== 'awaiting_input') {
+      res.status(400).json({ error: `Stage is not awaiting input (current: ${stageData.status})` });
+      return;
+    }
+
+    let shouldRerun = false;
+    if (stageParsed.data === 'ideation') {
+      const messages = await listStageMessages(runId, 'ideation');
+      let lastDraftTimestamp = '';
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        if (message.role === 'assistant' && message.kind === 'prd_draft') {
+          lastDraftTimestamp = message.created_at;
+          break;
+        }
+      }
+
+      shouldRerun = messages.some((message) => (
+        message.role === 'user'
+        && (lastDraftTimestamp === '' || new Date(message.created_at).getTime() > new Date(lastDraftTimestamp).getTime())
+      ));
+    }
+
+    if (shouldRerun) {
+      await db
+        .from('run_stages')
+        .update({
+          status: 'pending',
+          started_at: null,
+          completed_at: null,
+        })
+        .eq('id', stageData.id);
+
+      res.json({ status: 'revising', run_id: runId, stage });
+      return;
+    }
+
+    await db
+      .from('run_stages')
+      .update({
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', stageData.id);
+
+    res.json({ status: 'continued', run_id: runId, stage });
   } catch (err) {
     next(err);
   }

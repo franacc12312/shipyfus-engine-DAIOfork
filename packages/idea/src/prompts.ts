@@ -1,15 +1,43 @@
-import type { IdeationConfig } from '@daio/shared';
+import type { IdeationConfig, ProductPRD } from '@daio/shared';
 
-export function buildIdeatorPrompt(config: IdeationConfig, researchMarkdown?: string): string {
+function buildRevisionSection(previousPrd?: ProductPRD, feedback: string[] = []): string {
+  if (!previousPrd) {
+    return '';
+  }
+
+  const feedbackLines = feedback.length > 0
+    ? feedback.map((item) => `- ${item}`).join('\n')
+    : '- No additional feedback. Refine only if the current draft is weak.';
+
+  return `
+## Current Draft
+\`\`\`json
+${JSON.stringify(previousPrd, null, 2)}
+\`\`\`
+
+## Human Feedback
+${feedbackLines}
+
+Revise the existing draft. Keep the core idea unless the feedback clearly asks for a larger change. Return a full replacement PRD, not a patch.
+`;
+}
+
+export function buildIdeatorPrompt(
+  config: IdeationConfig,
+  researchMarkdown?: string,
+  revision?: { previousPrd?: ProductPRD; feedback?: string[] },
+): string {
   const researchSection = researchMarkdown ? `
 ## Market Research (from Scout)
 ${researchMarkdown}
 
 Use this research to generate an idea that addresses REAL problems and fills ACTUAL market gaps. Don't just generate from training data — leverage these findings.
 ` : '';
+  const revisionSection = buildRevisionSection(revision?.previousPrd, revision?.feedback);
 
   return `You are an AI product ideation specialist. Generate ONE innovative software product idea.
 ${researchSection}
+${revisionSection}
 ## Constraints
 - Platform: ${config.platform}
 - Target audience: ${config.audience}
