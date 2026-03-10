@@ -74,6 +74,7 @@ export interface ApprovalRequest {
   actor_id: string | null;
   actor_name: string | null;
   reason: string | null;
+  preview_url?: string | null;
   resolved_at: string | null;
   created_at: string;
   updated_at: string;

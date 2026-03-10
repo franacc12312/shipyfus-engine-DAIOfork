@@ -193,6 +193,17 @@ export function ApprovalGate({ runId, stage, approvalRequest, onApproved, onView
               </button>
             )}
 
+            {stage.stage === 'development' && approvalRequest?.preview_url && (
+              <a
+                href={approvalRequest.preview_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-[10px] text-terminal-cyan hover:text-terminal-cyan/80 tracking-wider transition font-bold"
+              >
+                ▸ VIEW PREVIEW ↗
+              </a>
+            )}
+
             {stage.stage === 'development' && onViewDocs && (
               <button
                 onClick={onViewDocs}
