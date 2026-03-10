@@ -501,11 +501,14 @@ export class PipelineOrchestrator {
 
     try {
       // Step 1: Pure API calls — gather raw data from all sources
+      const agentId = this.agentMap.get('research');
+      const log = (msg: string) => this.insertLog('research', msg, { event_type: 'assistant', agent_id: agentId });
+
       const service = new ResearchService();
-      service.addSource(new TavilySource());
-      service.addSource(new ProductHuntSource());
-      service.addSource(new HackerNewsSource());
-      service.addSource(new RedditSource());
+      service.addSource(new TavilySource(undefined, log));
+      service.addSource(new ProductHuntSource(log));
+      service.addSource(new HackerNewsSource(log));
+      service.addSource(new RedditSource(log));
 
       // Build research context from ideation constraints + topics
       const context: ResearchContext = {
@@ -514,27 +517,26 @@ export class PipelineOrchestrator {
         topics: config.topics,
       };
 
-      await this.insertLog('research', 'Gathering market intelligence from multiple sources...');
-      const rawData: RawResearchData = await service.gather(context, env.TAVILY_API_KEY);
-
-      // Log per-source breakdown
-      for (const sr of rawData.sourceResults) {
-        if (sr.count === 0) {
-          await this.insertLog('research', `${sr.name}: no results`);
-        } else {
-          const topTitles = sr.signals.slice(0, 3).map((s) => s.title).join(' | ');
-          await this.insertLog('research', `${sr.name}: ${sr.count} signals — ${topTitles}`);
-        }
+      await log('Starting market research...');
+      if (context.platform || context.audience) {
+        const parts = [context.platform, context.audience].filter(Boolean);
+        await log(`Context: ${parts.join(', ')}`);
       }
-      await this.insertLog('research', `Total: ${rawData.totalSignals} signals from ${rawData.sourcesUsed.length} sources`);
+      if (context.topics?.length) {
+        await log(`Topics: ${context.topics.join(', ')}`);
+      }
+
+      const rawData: RawResearchData = await service.gather(context, env.TAVILY_API_KEY, log);
 
       if (rawData.totalSignals === 0) {
+        await log('No signals found from any source — skipping synthesis.');
         console.log(`Run ${this.runId}: research found no signals, skipping synthesis`);
         await this.updateStageStatus('research', 'skipped');
         return null;
       }
 
       // Step 2: Claude synthesizes raw data into a markdown research brief
+      await log(`Synthesizing ${rawData.totalSignals} signals into research brief...`);
       const prompt = buildResearcherPrompt(rawData, config);
       const result = await this.runner.runOnce(prompt, {
         runId: this.runId,
@@ -548,6 +550,8 @@ export class PipelineOrchestrator {
       if (!markdown) {
         throw new Error('Research synthesis failed to produce a valid brief');
       }
+
+      await log(`Research brief ready (${result.cost ? `$${result.cost.toFixed(2)}` : 'cost unknown'}).`);
 
       // Store markdown in stage output
       await db.from('run_stages').update({
@@ -1127,13 +1131,14 @@ export class PipelineOrchestrator {
     throw new Error('Pipeline cancelled while awaiting approval');
   }
 
-  private async insertLog(stage: string, content: string): Promise<void> {
+  private async insertLog(stage: string, content: string, opts?: { event_type?: string; agent_id?: string }): Promise<void> {
     await db.from('logs').insert({
       run_id: this.runId,
       stage,
       iteration: 0,
-      event_type: 'system',
+      event_type: opts?.event_type ?? 'system',
       content,
+      agent_id: opts?.agent_id ?? null,
     });
   }
 

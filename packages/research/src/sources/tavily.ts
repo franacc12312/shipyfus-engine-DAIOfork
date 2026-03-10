@@ -1,4 +1,4 @@
-import type { ResearchContext, ResearchSource, Signal, TavilySearchResponse } from '../types.js';
+import type { ResearchContext, ResearchLogFn, ResearchSource, Signal, TavilySearchResponse } from '../types.js';
 import { classifySignalType } from '../types.js';
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';
@@ -34,10 +34,12 @@ export function buildQueries(context: ResearchContext): string[] {
 
 export class TavilySource implements ResearchSource {
   name = 'tavily';
-  private sitePrefix: string;
+  protected sitePrefix: string;
+  protected onLog?: ResearchLogFn;
 
-  constructor(sitePrefix?: string) {
+  constructor(sitePrefix?: string, onLog?: ResearchLogFn) {
     this.sitePrefix = sitePrefix ?? '';
+    this.onLog = onLog;
   }
 
   async gather(context: ResearchContext, apiKey: string): Promise<Signal[]> {
@@ -47,18 +49,25 @@ export class TavilySource implements ResearchSource {
     for (const query of queries) {
       const fullQuery = this.sitePrefix ? `${this.sitePrefix} ${query}` : query;
       try {
+        await this.onLog?.(`  Searching: "${query}"`);
         const results = await this.search(fullQuery, apiKey);
-        for (const result of results) {
-          signals.push({
-            source: this.name,
-            type: classifySignalType(result.title + ' ' + result.content),
-            title: result.title,
-            summary: result.content.slice(0, 500),
-            url: result.url,
-            relevance: result.score,
-          });
+        if (results.length > 0) {
+          await this.onLog?.(`  Found ${results.length} results`);
+          for (const result of results) {
+            signals.push({
+              source: this.name,
+              type: classifySignalType(result.title + ' ' + result.content),
+              title: result.title,
+              summary: result.content.slice(0, 500),
+              url: result.url,
+              relevance: result.score,
+            });
+          }
+        } else {
+          await this.onLog?.(`  No results for this query`);
         }
       } catch (err) {
+        await this.onLog?.(`  Query failed: ${err instanceof Error ? err.message : String(err)}`);
         console.warn(`Tavily search failed for "${fullQuery}":`, err);
       }
     }

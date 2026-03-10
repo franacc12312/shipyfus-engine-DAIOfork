@@ -1,9 +1,10 @@
+import type { ResearchLogFn } from '../types.js';
 import { TavilySource } from './tavily.js';
 
 export class RedditSource extends TavilySource {
   override name = 'reddit';
 
-  constructor() {
-    super('site:reddit.com');
+  constructor(onLog?: ResearchLogFn) {
+    super('site:reddit.com', onLog);
   }
 }

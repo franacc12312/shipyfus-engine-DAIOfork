@@ -1,3 +1,5 @@
+export type ResearchLogFn = (message: string) => Promise<void> | void;
+
 // Signal types from data sources
 export type SignalType =
   | 'trend'
