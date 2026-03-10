@@ -36,19 +36,6 @@ export function InteractiveStagePanel({ runId, stage, messages, onUpdated }: Int
     [messages],
   );
 
-  let lastAssistantDraftIndex = -1;
-  for (let index = orderedMessages.length - 1; index >= 0; index -= 1) {
-    const message = orderedMessages[index];
-    if (message.role === 'assistant' && message.kind === 'prd_draft') {
-      lastAssistantDraftIndex = index;
-      break;
-    }
-  }
-
-  const hasPendingFeedback = orderedMessages
-    .slice(lastAssistantDraftIndex + 1)
-    .some((message) => message.role === 'user');
-
   async function handleSend() {
     const content = draft.trim();
     if (!content) return;

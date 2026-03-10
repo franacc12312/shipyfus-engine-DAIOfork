@@ -18,7 +18,7 @@ import type { PorkbunConfig } from '@daio/brand';
 import type { TwitterConfig } from '@daio/social';
 import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, DistributionConfig, AnalyticsConfig, ProductPRD, Department, HitlConfig, DomainChoice, StageInteractionMode } from '@daio/shared';
 import { getRandomRetryMessage } from '@daio/shared';
-import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl } from '../services/vercel.js';
+import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl, deployPreview } from '../services/vercel.js';
 import { injectPostHogSnippet } from '../services/posthog.js';
 import { buildStageApprovalRequest, createApprovalService, resolveAllPendingApprovalRequests } from '../services/approvals.js';
 import { appendStageMessage, formatPrdDraft, listStageMessages } from '../services/stage-messages.js';
@@ -401,13 +401,15 @@ export class PipelineOrchestrator {
     if (devStage?.status === 'completed') {
       console.log(`Run ${this.runId}: skipping completed development`);
     } else if (devStage?.status === 'awaiting_approval' || devStage?.status === 'awaiting_input') {
-      await this.checkApprovalGate('development');
+      const existingPreviewUrl = await this.getExistingPreviewUrl('development');
+      await this.checkApprovalGate('development', existingPreviewUrl);
     } else if (devStage?.status === 'failed') {
       throw new Error('Development previously failed');
     } else {
       if (this.cancelled) return;
       await this.runDevelopment(constraints.development, productDir, prd.productName);
-      await this.checkApprovalGate('development');
+      const previewUrl = await this.deployPreviewIfNeeded(productDir);
+      await this.checkApprovalGate('development', previewUrl);
     }
 
     // Inject PostHog analytics snippet into built product (before deployment)
@@ -1047,7 +1049,7 @@ export class PipelineOrchestrator {
     }
   }
 
-  async checkApprovalGate(stage: Department): Promise<void> {
+  async checkApprovalGate(stage: Department, previewUrl?: string | null): Promise<void> {
     const interactionMode = await this.getStageInteractionMode(stage);
     if (interactionMode === 'automatic') return;
     if (interactionMode === 'interactive') {
@@ -1078,9 +1080,17 @@ export class PipelineOrchestrator {
       buildStageApprovalRequest(stage, stageData.output_context ?? {}),
     );
 
+    // Store preview URL on the approval request if provided
+    if (previewUrl) {
+      await db
+        .from('approval_requests')
+        .update({ preview_url: previewUrl })
+        .eq('id', publication.requestId);
+    }
+
     await this.insertLog(
       stage,
-      `Stage "${stage}" complete. Waiting for human approval before proceeding... [request=${publication.requestId}]`,
+      `Stage "${stage}" complete. Waiting for human approval before proceeding...${previewUrl ? ` Preview: ${previewUrl}` : ''} [request=${publication.requestId}]`,
     );
 
     // Poll every 3s until approved, retried, or cancelled
@@ -1274,6 +1284,43 @@ export class PipelineOrchestrator {
         productName: prd.productName,
       },
     });
+  }
+
+  private async deployPreviewIfNeeded(productDir: string): Promise<string | null> {
+    if (!env.VERCEL_TOKEN) {
+      await this.insertLog('development', 'Preview deploy skipped: no VERCEL_TOKEN configured');
+      return null;
+    }
+
+    // Only deploy preview if HITL gate is enabled for development
+    const interactionMode = await this.getStageInteractionMode('development');
+    if (interactionMode === 'automatic') {
+      return null;
+    }
+
+    await this.insertLog('development', 'Deploying preview to Vercel...');
+
+    const result = await deployPreview(productDir, env.VERCEL_TOKEN);
+
+    if (result.url) {
+      await this.insertLog('development', `Preview deployed: ${result.url}`);
+      return result.url;
+    }
+
+    await this.insertLog('development', `Preview deploy failed (non-fatal): ${result.error}`);
+    return null;
+  }
+
+  private async getExistingPreviewUrl(stage: Department): Promise<string | null> {
+    const { data } = await db
+      .from('approval_requests')
+      .select('preview_url')
+      .eq('run_id', this.runId)
+      .eq('stage', stage)
+      .eq('status', 'pending')
+      .single();
+
+    return (data?.preview_url as string) ?? null;
   }
 
   private async insertLog(stage: string, content: string): Promise<void> {
