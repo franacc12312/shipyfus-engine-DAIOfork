@@ -54,6 +54,7 @@ export function StageIndicator({ stages }: StageIndicatorProps) {
                     status === 'completed' ? 'bg-terminal-green text-zinc-950' :
                     status === 'running' ? 'bg-terminal-green/30 border border-terminal-green pulse-dot' :
                     status === 'awaiting_approval' ? 'bg-terminal-amber/30 border border-terminal-amber pulse-dot' :
+                    status === 'awaiting_input' ? 'bg-terminal-cyan/20 border border-terminal-cyan pulse-dot' :
                     status === 'cancelled' ? 'bg-terminal-amber/30 border border-terminal-amber' :
                     status === 'failed' ? 'bg-terminal-red/30 border border-terminal-red' :
                     status === 'skipped' ? 'bg-zinc-800 border border-zinc-700' :
@@ -62,6 +63,7 @@ export function StageIndicator({ stages }: StageIndicatorProps) {
                 >
                   {status === 'completed' && '✓'}
                   {status === 'awaiting_approval' && '!'}
+                  {status === 'awaiting_input' && '?'}
                   {status === 'cancelled' && '⊘'}
                   {status === 'failed' && '×'}
                   {status === 'skipped' && '—'}
@@ -72,6 +74,7 @@ export function StageIndicator({ stages }: StageIndicatorProps) {
                     status === 'completed' ? 'text-terminal-green' :
                     status === 'running' ? 'text-terminal-green' :
                     status === 'awaiting_approval' ? 'text-terminal-amber' :
+                    status === 'awaiting_input' ? 'text-terminal-cyan' :
                     status === 'cancelled' ? 'text-terminal-amber' :
                     status === 'failed' ? 'text-terminal-red' :
                     status === 'skipped' ? 'text-zinc-600' :
@@ -81,6 +84,9 @@ export function StageIndicator({ stages }: StageIndicatorProps) {
                   {STAGE_LABELS[stageName]}
                   {status === 'awaiting_approval' && (
                     <span className="ml-1 text-[8px] text-terminal-amber/70">AWAITING</span>
+                  )}
+                  {status === 'awaiting_input' && (
+                    <span className="ml-1 text-[8px] text-terminal-cyan/70">INPUT</span>
                   )}
                   {status === 'cancelled' && (
                     <span className="ml-1 text-[8px] text-terminal-amber/70">CANCELLED</span>
@@ -107,6 +113,9 @@ export function StageIndicator({ stages }: StageIndicatorProps) {
                 )}
                 {status === 'awaiting_approval' && stage && (
                   <span className="text-terminal-amber">{getDuration(stage)}</span>
+                )}
+                {status === 'awaiting_input' && stage && (
+                  <span className="text-terminal-cyan">{getDuration(stage)}</span>
                 )}
                 {status === 'cancelled' && stage && (
                   <span className="text-terminal-amber">{getDuration(stage)}</span>

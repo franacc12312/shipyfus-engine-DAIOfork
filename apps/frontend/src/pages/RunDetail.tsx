@@ -10,6 +10,7 @@ import { ViewToggle, type ViewMode } from '../components/ViewToggle';
 import { DocumentViewer } from '../components/DocumentViewer';
 import { AdminGate } from '../components/AdminGate';
 import { ApprovalGate } from '../components/ApprovalGate';
+import { InteractiveStagePanel } from '../components/InteractiveStagePanel';
 import { api } from '../lib/api';
 import { STAGES, type ApprovalRequest, type Department } from '@daio/shared';
 
@@ -37,7 +38,7 @@ function getApprovalLabel(request: ApprovalRequest): string {
 
 export function RunDetail() {
   const { id } = useParams();
-  const { run, loading: runLoading } = useRealtimeRun(id);
+  const { run, loading: runLoading, refetch } = useRealtimeRun(id);
   const { logs, loading: logsLoading } = useRealtimeLogs(id);
   const { agentsByStage, agentsById } = useAgents();
   const [activeTab, setActiveTab] = useState<string>('all');
@@ -161,6 +162,16 @@ export function RunDetail() {
           approvalRequest={pendingApprovalRequests.find((request) => request.stage === s.stage)}
           onApproved={() => handleStageApproved(s.stage as Department)}
           onViewDocs={() => setViewMode('docs')}
+        />
+      ))}
+
+      {run.run_stages?.filter((s) => s.status === 'awaiting_input').map((s) => (
+        <InteractiveStagePanel
+          key={s.id}
+          runId={run.id}
+          stage={s}
+          messages={(run.stage_messages || []).filter((message) => message.stage === s.stage)}
+          onUpdated={refetch}
         />
       ))}
 
