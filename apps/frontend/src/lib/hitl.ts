@@ -20,3 +20,11 @@ export async function approveStage(runId: string, stage: string, chosenDomain?: 
 export async function rejectStage(runId: string, stage: string, action: 'retry' | 'cancel'): Promise<void> {
   await api.post(`/runs/${runId}/stages/${stage}/reject`, { action });
 }
+
+export async function sendStageMessage(runId: string, stage: string, content: string): Promise<void> {
+  await api.post(`/runs/${runId}/stages/${stage}/messages`, { content });
+}
+
+export async function continueInteractiveStage(runId: string, stage: string): Promise<void> {
+  await api.post(`/runs/${runId}/stages/${stage}/continue`, {});
+}

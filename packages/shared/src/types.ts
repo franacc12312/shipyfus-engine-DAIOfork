@@ -31,6 +31,7 @@ export interface Run {
   // Joined
   run_stages?: RunStage[];
   approval_requests?: ApprovalRequest[];
+  stage_messages?: StageMessage[];
 }
 
 export interface RunStage {
@@ -139,12 +140,27 @@ export interface Participant {
   created_at: string;
 }
 
+export interface StageMessage {
+  id: string;
+  run_id: string;
+  stage: Department;
+  role: StageMessageRole;
+  kind: StageMessageKind;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_by: string | null;
+  created_at: string;
+}
+
 // Enums and unions
 
 export type Department = 'research' | 'ideation' | 'branding' | 'planning' | 'development' | 'deployment' | 'distribution';
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
-export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped' | 'awaiting_approval';
+export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped' | 'awaiting_approval' | 'awaiting_input';
 export type ProductStatus = 'built' | 'tested' | 'deployed' | 'archived';
+export type StageInteractionMode = 'automatic' | 'approval' | 'interactive';
+export type StageMessageRole = 'system' | 'assistant' | 'user';
+export type StageMessageKind = 'message' | 'prd_draft';
 
 // Human in the Loop (HITL) types
 
@@ -157,6 +173,12 @@ export interface HitlConfig {
   gate_after_planning: boolean;
   gate_after_development: boolean;
   gate_after_deployment: boolean;
+  research_mode?: StageInteractionMode;
+  ideation_mode?: StageInteractionMode;
+  branding_mode?: StageInteractionMode;
+  planning_mode?: StageInteractionMode;
+  development_mode?: StageInteractionMode;
+  deployment_mode?: StageInteractionMode;
   updated_at: string;
   updated_by: string | null;
 }

@@ -13,7 +13,14 @@ export function createIdeationStage(): PipelineStage<IdeationStageInput, Ideatio
   return {
     id: 'ideation',
     async run(ctx, input) {
-      const prompt = buildIdeatorPrompt(input.config, input.researchMarkdown ?? undefined);
+      const prompt = buildIdeatorPrompt(
+        input.config,
+        input.researchMarkdown ?? undefined,
+        {
+          previousPrd: input.previousPrd,
+          feedback: input.feedback,
+        },
+      );
       const result = await ctx.runner.runOnce(prompt, {
         runId: ctx.runId,
         stage: 'ideation',

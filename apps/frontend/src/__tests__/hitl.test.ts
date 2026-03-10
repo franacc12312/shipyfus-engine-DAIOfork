@@ -13,7 +13,7 @@ vi.mock('../lib/api', () => ({
   },
 }));
 
-import { fetchHitlConfig, updateHitlConfig, approveStage, rejectStage } from '../lib/hitl';
+import { fetchHitlConfig, updateHitlConfig, approveStage, rejectStage, sendStageMessage, continueInteractiveStage } from '../lib/hitl';
 
 describe('HITL API client', () => {
   beforeEach(() => {
@@ -27,6 +27,7 @@ describe('HITL API client', () => {
       gate_after_ideation: true,
       gate_after_planning: false,
       gate_after_development: true,
+      ideation_mode: 'interactive',
     };
     mockGet.mockResolvedValue(mockConfig);
 
@@ -97,6 +98,24 @@ describe('HITL API client', () => {
     await rejectStage('run-456', 'ideation', 'retry');
 
     expect(mockPost).toHaveBeenCalledWith('/runs/run-456/stages/ideation/reject', { action: 'retry' });
+  });
+
+  it('sendStageMessage posts feedback content', async () => {
+    mockPost.mockResolvedValue({ status: 'saved' });
+
+    await sendStageMessage('run-123', 'ideation', 'Narrow the audience to solo founders.');
+
+    expect(mockPost).toHaveBeenCalledWith('/runs/run-123/stages/ideation/messages', {
+      content: 'Narrow the audience to solo founders.',
+    });
+  });
+
+  it('continueInteractiveStage posts to continue endpoint', async () => {
+    mockPost.mockResolvedValue({ status: 'continued' });
+
+    await continueInteractiveStage('run-123', 'ideation');
+
+    expect(mockPost).toHaveBeenCalledWith('/runs/run-123/stages/ideation/continue', {});
   });
 
   it('fetchHitlConfig propagates API errors', async () => {
