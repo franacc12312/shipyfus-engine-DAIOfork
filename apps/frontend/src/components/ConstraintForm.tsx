@@ -5,6 +5,7 @@ import type { Department } from '@daio/shared';
 
 interface ConstraintFormProps {
   department: Department;
+  blackbox?: boolean;
 }
 
 interface FieldDef {
@@ -455,7 +456,7 @@ function Tooltip({ text }: { text: string }) {
   );
 }
 
-export function ConstraintForm({ department }: ConstraintFormProps) {
+export function ConstraintForm({ department, blackbox = false }: ConstraintFormProps) {
   const { isAdmin } = useAuth();
   const [config, setConfig] = useState<Record<string, any>>({});
   const [customRules, setCustomRules] = useState('');
@@ -501,7 +502,7 @@ export function ConstraintForm({ department }: ConstraintFormProps) {
         <p className="text-[10px] text-zinc-600 mb-2">{description}</p>
       )}
 
-      {isAdmin && SMART_DEFAULTS[department] && (
+      {isAdmin && SMART_DEFAULTS[department] && !blackbox && (
         <button
           onClick={() => {
             const defaults = SMART_DEFAULTS[department]();
@@ -511,7 +512,7 @@ export function ConstraintForm({ department }: ConstraintFormProps) {
           }}
           className="mb-3 px-3 py-1 rounded text-[10px] bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition"
         >
-          🎲 Surprise Me
+          🎲 Randomize
         </button>
       )}
 

@@ -9,6 +9,17 @@ type RunWithStages = Run & { run_stages?: any[] };
 
 const isDev = import.meta.env.DEV;
 
+const TOPIC_POOL = ['AI tools', 'developer productivity', 'crypto/DeFi', 'data visualization', 'browser extensions', 'automation', 'health/fitness tech', 'content creation', 'side project tools', 'API wrappers', 'open source', 'privacy tools'];
+
+function rPick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function randomTopics(): string {
+  const shuffled = [...TOPIC_POOL].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, 3).join(', ');
+}
+
 export function Dashboard() {
   const [runs, setRuns] = useState<RunWithStages[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,6 +84,40 @@ export function Dashboard() {
     }
   }
 
+  async function shipSomething() {
+    setStarting(true);
+    try {
+      // Auto-configure all constraints with smart defaults, then start
+      const defaults: Record<string, Record<string, unknown>> = {
+        research: { enabled: true, topics: randomTopics(), max_searches: 8, moat_threshold: 2, max_competition: 'any' },
+        ideation: { platform: rPick(['web','web','web','extension','cli']), audience: rPick(['developer','developer','consumer','creator']), complexity: rPick(['simple','simple','trivial']), score_threshold: 13, preferred_template: 'auto', include_learnings: true, custom_rules: ['Must be completable in a single session', 'Focus on utility apps'] },
+        branding: { enabled: false, max_domain_price: 0, auto_purchase: false },
+        planning: { max_phases: 4, require_tests: true, max_files_per_phase: 8, template_aware: true },
+        testing: { framework: 'both', require_e2e: true, require_ac_tracing: true, min_coverage: 80 },
+        development: { language: 'typescript', max_files: 20, max_iterations: 15, max_budget_usd: 10, tdd_mode: true, use_progress_md: true, inject_feedback: true, inject_posthog: false, custom_rules: ['Use Tailwind for styling', 'Keep dependencies minimal'] },
+        deployment: { provider: 'vercel', auto_deploy: true, preview_deploy: false, connect_domain: false },
+        distribution: { enabled: true, twitter_enabled: true, reddit_enabled: true, reddit_draft_mode: true, hackernews_enabled: false, linkedin_enabled: false, auto_post_twitter: false },
+      };
+
+      // Save all constraints silently
+      for (const [dept, config] of Object.entries(defaults)) {
+        try {
+          await api.put(`/constraints/${dept}`, { config });
+        } catch { /* some departments might not exist yet */ }
+      }
+
+      // Start the run
+      await api.post('/runs', {});
+      setToast({ message: '🚀 Pipeline started in blackbox mode!', type: 'success' });
+      await fetchRuns();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to start';
+      setToast({ message, type: 'error' });
+    } finally {
+      setStarting(false);
+    }
+  }
+
   const stats = {
     total: runs.length,
     active: runs.filter((r) => r.status === 'running' || r.status === 'queued').length,
@@ -89,13 +134,22 @@ export function Dashboard() {
         </div>
 
         <AdminGate>
-          <button
-            onClick={startRun}
-            disabled={starting}
-            className="bg-terminal-green/20 text-terminal-green border border-terminal-green/30 rounded px-4 py-2 text-sm hover:bg-terminal-green/30 transition tracking-wider disabled:opacity-50"
-          >
-            {starting ? 'INITIALIZING...' : 'START RUN'}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={shipSomething}
+              disabled={starting}
+              className="bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded px-4 py-2 text-sm hover:bg-orange-500/30 transition tracking-wider disabled:opacity-50"
+            >
+              {starting ? '...' : '🚀 SHIP SOMETHING'}
+            </button>
+            <button
+              onClick={startRun}
+              disabled={starting}
+              className="bg-terminal-green/20 text-terminal-green border border-terminal-green/30 rounded px-4 py-2 text-sm hover:bg-terminal-green/30 transition tracking-wider disabled:opacity-50"
+            >
+              {starting ? 'INITIALIZING...' : 'START RUN'}
+            </button>
+          </div>
         </AdminGate>
       </div>
 
@@ -210,10 +264,21 @@ export function Dashboard() {
         </div>
       ) : runs.length === 0 ? (
         <div className="bg-zinc-950 border border-zinc-800 rounded-lg p-8 text-center">
-          <p className="text-zinc-400 text-sm">No runs yet — start your first one</p>
-          <p className="text-zinc-600 text-xs mt-2">
-            Click START RUN to begin an autonomous build pipeline
+          <p className="text-zinc-400 text-sm mb-1">No runs yet</p>
+          <p className="text-zinc-600 text-xs mb-4">
+            <strong className="text-orange-400">🚀 SHIP SOMETHING</strong> = blackbox mode (auto-configures everything, you just approve/reject ideas)
+            <br />
+            <strong className="text-terminal-green">START RUN</strong> = uses your current constraint settings
           </p>
+          <AdminGate>
+            <button
+              onClick={shipSomething}
+              disabled={starting}
+              className="bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded px-6 py-3 text-sm hover:bg-orange-500/30 transition tracking-wider disabled:opacity-50"
+            >
+              🚀 SHIP SOMETHING
+            </button>
+          </AdminGate>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
