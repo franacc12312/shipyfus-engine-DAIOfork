@@ -11,6 +11,7 @@ export interface RunOnceOptions {
   maxBudgetUsd?: number;
   iteration?: number;
   agentId?: string;
+  anthropicApiKey?: string;
   onEvent?: (event: ClaudeStreamEvent) => void;
 }
 
@@ -43,7 +44,7 @@ export class AgentRunner {
   }
 
   async runOnce(prompt: string, options: RunOnceOptions): Promise<{ text: string; json: unknown | null; cost: number }> {
-    const { runId, stage, cwd, maxBudgetUsd = 5, iteration = 0, agentId, onEvent } = options;
+    const { runId, stage, cwd, maxBudgetUsd = 5, iteration = 0, agentId, anthropicApiKey, onEvent } = options;
 
     const args = [
       '--print',
@@ -56,7 +57,10 @@ export class AgentRunner {
     ];
 
     return new Promise((resolve, reject) => {
-      const child = spawn('claude', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+      const spawnEnv = anthropicApiKey
+        ? { ...process.env, ANTHROPIC_API_KEY: anthropicApiKey }
+        : undefined;
+      const child = spawn('claude', args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], env: spawnEnv });
       this.activeProcesses.set(stage, child);
 
       let accumulatedText = '';
