@@ -1,15 +1,27 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { RunCard } from '../components/RunCard';
 import { AdminGate } from '../components/AdminGate';
+import { useAuth } from '../hooks/useAuth';
 import { STAGES } from '@daio/shared';
 import type { Run, Department } from '@daio/shared';
 
-type RunWithStages = Run & { run_stages?: any[] };
+interface RunStage {
+  id: string;
+  department: string;
+  status: string;
+}
+
+type RunWithStages = Run & { run_stages?: RunStage[] };
 
 const isDev = import.meta.env.DEV;
 
 export function Dashboard() {
+  const { isAuthenticated, profile } = useAuth();
+  const hasApiKey = profile?.has_anthropic_key ?? false;
+  const needsOnboarding = isAuthenticated && !hasApiKey;
+
   const [runs, setRuns] = useState<RunWithStages[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,13 +103,32 @@ export function Dashboard() {
         <AdminGate>
           <button
             onClick={startRun}
-            disabled={starting}
+            disabled={starting || needsOnboarding}
             className="bg-terminal-green/20 text-terminal-green border border-terminal-green/30 rounded px-4 py-2 text-sm hover:bg-terminal-green/30 transition tracking-wider disabled:opacity-50"
+            title={needsOnboarding ? 'Set up your API keys in Settings first' : undefined}
           >
             {starting ? 'INITIALIZING...' : 'START RUN'}
           </button>
         </AdminGate>
       </div>
+
+      {/* Onboarding banner */}
+      {needsOnboarding && (
+        <div className="mb-4 bg-orange-500/10 border border-orange-500/30 rounded-lg p-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-orange-400 font-medium">Set up your API keys to start shipping</p>
+            <p className="text-xs text-orange-400/60 mt-0.5">
+              You need at least an Anthropic API key to run the pipeline
+            </p>
+          </div>
+          <Link
+            to="/settings"
+            className="bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded px-4 py-2 text-xs hover:bg-orange-500/30 transition tracking-wider flex-shrink-0"
+          >
+            GO TO SETTINGS
+          </Link>
+        </div>
+      )}
 
       {/* Dev mode panel */}
       {isDev && (
