@@ -366,6 +366,8 @@ router.post('/:id/stages/:stage/approve', requireAdmin, async (req, res, next) =
       provider: 'dashboard',
     });
 
+    resumePipeline(runId);
+
     res.json({ status: 'approved', run_id: runId, stage, request_id: requestId });
   } catch (err) {
     next(err);
@@ -473,6 +475,8 @@ router.post('/:id/stages/:stage/reject', requireAdmin, async (req, res, next) =>
           provider: 'dashboard',
         })
         : null;
+
+      resumePipeline(runId);
 
       res.json({ status: 'retrying', run_id: runId, stage, request_id: requestId });
     }

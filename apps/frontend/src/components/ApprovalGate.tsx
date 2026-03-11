@@ -60,9 +60,11 @@ export function ApprovalGate({ runId, stage, approvalRequest, onApproved, onView
   const [showConfirm, setShowConfirm] = useState(false);
   const [showPrd, setShowPrd] = useState(false);
   const payloadSummary = summarizePayload(stage, approvalRequest);
+  const oc = stage.output_context as Record<string, unknown> | null;
+  const previewUrl = typeof approvalRequest?.preview_url === 'string' ? approvalRequest.preview_url : null;
 
   // Delegate to DomainPicker for branding stage with candidates
-  const ctx = stage.output_context as Record<string, unknown> | null;
+  const ctx = oc;
   if (stage.stage === 'branding' && ctx?.candidates) {
     return <DomainPicker runId={runId} stage={stage} onApproved={onApproved} />;
   }
@@ -136,10 +138,9 @@ export function ApprovalGate({ runId, stage, approvalRequest, onApproved, onView
         </div>
       )}
 
-      {stage.output_context && (() => {
-        const oc = stage.output_context as Record<string, unknown>;
-        return (
-          <div className="mt-2 mb-3 space-y-2">
+      {(oc || (stage.stage === 'development' && previewUrl) || (stage.stage === 'development' && onViewDocs) || (stage.stage === 'planning' && onViewDocs)) && (
+        <div className="mt-2 mb-3 space-y-2">
+          {oc && (
             <div className="bg-zinc-950/50 rounded p-2 text-[10px] text-zinc-400">
               {stage.stage === 'ideation' && oc.productName ? (
                 <span>Product: <span className="text-zinc-200">{String(oc.productName)}</span></span>
@@ -155,66 +156,66 @@ export function ApprovalGate({ runId, stage, approvalRequest, onApproved, onView
                 <span className="text-zinc-500">Output available</span>
               )}
             </div>
+          )}
 
-            {stage.stage === 'ideation' && !!oc.productName && (
-              <>
-                <button
-                  onClick={() => setShowPrd((v) => !v)}
-                  className="text-[10px] text-terminal-cyan hover:text-terminal-cyan/80 tracking-wider transition"
-                >
-                  {showPrd ? '▾ HIDE PRD' : '▸ VIEW PRD'}
-                </button>
-                {showPrd && (
-                  <div className="bg-zinc-950/50 rounded p-3 text-[10px] text-zinc-400 max-h-64 overflow-auto space-y-1.5">
-                    {!!oc.productDescription && <div><span className="text-zinc-500">Description:</span> <span className="text-zinc-200">{String(oc.productDescription)}</span></div>}
-                    {!!oc.targetUser && <div><span className="text-zinc-500">Target User:</span> <span className="text-zinc-200">{String(oc.targetUser)}</span></div>}
-                    {!!oc.problemStatement && <div><span className="text-zinc-500">Problem:</span> <span className="text-zinc-200">{String(oc.problemStatement)}</span></div>}
-                    {Array.isArray(oc.coreFunctionality) && oc.coreFunctionality.length > 0 && (
-                      <div>
-                        <span className="text-zinc-500">Core Features:</span>
-                        <ul className="list-disc list-inside ml-1 mt-0.5 space-y-0.5">
-                          {(oc.coreFunctionality as string[]).map((f, i) => <li key={i} className="text-zinc-200">{f}</li>)}
-                        </ul>
-                      </div>
-                    )}
-                    {!!oc.mvpScope && <div><span className="text-zinc-500">MVP Scope:</span> <span className="text-zinc-200">{String(oc.mvpScope)}</span></div>}
-                    {!!oc.uniqueValue && <div><span className="text-zinc-500">Unique Value:</span> <span className="text-zinc-200">{String(oc.uniqueValue)}</span></div>}
-                  </div>
-                )}
-              </>
-            )}
-
-            {stage.stage === 'planning' && onViewDocs && (
+          {stage.stage === 'ideation' && !!oc?.productName && (
+            <>
               <button
-                onClick={onViewDocs}
+                onClick={() => setShowPrd((v) => !v)}
                 className="text-[10px] text-terminal-cyan hover:text-terminal-cyan/80 tracking-wider transition"
               >
-                ▸ VIEW PLAN
+                {showPrd ? '▾ HIDE PRD' : '▸ VIEW PRD'}
               </button>
-            )}
+              {showPrd && (
+                <div className="bg-zinc-950/50 rounded p-3 text-[10px] text-zinc-400 max-h-64 overflow-auto space-y-1.5">
+                  {!!oc.productDescription && <div><span className="text-zinc-500">Description:</span> <span className="text-zinc-200">{String(oc.productDescription)}</span></div>}
+                  {!!oc.targetUser && <div><span className="text-zinc-500">Target User:</span> <span className="text-zinc-200">{String(oc.targetUser)}</span></div>}
+                  {!!oc.problemStatement && <div><span className="text-zinc-500">Problem:</span> <span className="text-zinc-200">{String(oc.problemStatement)}</span></div>}
+                  {Array.isArray(oc.coreFunctionality) && oc.coreFunctionality.length > 0 && (
+                    <div>
+                      <span className="text-zinc-500">Core Features:</span>
+                      <ul className="list-disc list-inside ml-1 mt-0.5 space-y-0.5">
+                        {(oc.coreFunctionality as string[]).map((f, i) => <li key={i} className="text-zinc-200">{f}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {!!oc.mvpScope && <div><span className="text-zinc-500">MVP Scope:</span> <span className="text-zinc-200">{String(oc.mvpScope)}</span></div>}
+                  {!!oc.uniqueValue && <div><span className="text-zinc-500">Unique Value:</span> <span className="text-zinc-200">{String(oc.uniqueValue)}</span></div>}
+                </div>
+              )}
+            </>
+          )}
 
-            {stage.stage === 'development' && approvalRequest?.preview_url && (
-              <a
-                href={approvalRequest.preview_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-[10px] text-terminal-cyan hover:text-terminal-cyan/80 tracking-wider transition font-bold"
-              >
-                ▸ VIEW PREVIEW ↗
-              </a>
-            )}
+          {stage.stage === 'planning' && onViewDocs && (
+            <button
+              onClick={onViewDocs}
+              className="text-[10px] text-terminal-cyan hover:text-terminal-cyan/80 tracking-wider transition"
+            >
+              ▸ VIEW PLAN
+            </button>
+          )}
 
-            {stage.stage === 'development' && onViewDocs && (
-              <button
-                onClick={onViewDocs}
-                className="text-[10px] text-terminal-cyan hover:text-terminal-cyan/80 tracking-wider transition"
-              >
-                ▸ VIEW PROGRESS
-              </button>
-            )}
-          </div>
-        );
-      })()}
+          {stage.stage === 'development' && previewUrl && (
+            <a
+              href={previewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-[10px] text-terminal-cyan hover:text-terminal-cyan/80 tracking-wider transition font-bold"
+            >
+              ▸ VIEW PREVIEW ↗
+            </a>
+          )}
+
+          {stage.stage === 'development' && onViewDocs && (
+            <button
+              onClick={onViewDocs}
+              className="text-[10px] text-terminal-cyan hover:text-terminal-cyan/80 tracking-wider transition"
+            >
+              ▸ VIEW PROGRESS
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-2 mt-3">
         <AdminGate>

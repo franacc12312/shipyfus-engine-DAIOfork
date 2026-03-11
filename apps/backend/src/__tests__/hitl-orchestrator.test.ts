@@ -6,7 +6,6 @@ const dbOps: { table: string; op: string; data?: any; filters?: any }[] = [];
 // Configurable mock responses
 let hitlConfig = { enabled: false, gate_after_research: true, gate_after_ideation: true, gate_after_branding: true, gate_after_planning: true, gate_after_development: true, gate_after_deployment: false };
 let stageStatusResponses: Record<string, string> = {};
-let pollCount = 0;
 
 vi.mock('../services/db.js', () => {
   const makeChainable = () => {
@@ -22,9 +21,8 @@ vi.mock('../services/db.js', () => {
           return Promise.resolve({ data: null, error: { code: 'PGRST116' } });
         }
         if (state.table === 'run_stages' && state.filters.stage) {
-          pollCount++;
-          const status = stageStatusResponses[state.filters.stage] || 'awaiting_approval';
-          return Promise.resolve({ data: { id: `stage-${state.filters.stage}`, status }, error: null });
+          const status = stageStatusResponses[state.filters.stage] || 'completed';
+          return Promise.resolve({ data: { id: `stage-${state.filters.stage}`, status, output_context: {} }, error: null });
         }
         if (state.table === 'constraints') {
           return Promise.resolve({ data: null, error: null });
@@ -159,7 +157,6 @@ describe('checkApprovalGate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     dbOps.length = 0;
-    pollCount = 0;
     hitlConfig = { enabled: false, gate_after_research: true, gate_after_ideation: true, gate_after_branding: true, gate_after_planning: true, gate_after_development: true, gate_after_deployment: false };
     stageStatusResponses = {};
   });
@@ -182,15 +179,12 @@ describe('checkApprovalGate', () => {
     expect(stageUpdates).toHaveLength(0);
   });
 
-  it('sets stage to awaiting_approval when gate is enabled', async () => {
+  it('publishes an approval request and pauses when gate is enabled', async () => {
     hitlConfig.enabled = true;
     hitlConfig.gate_after_ideation = true;
-    // First poll returns awaiting_approval, second poll returns completed
-    let callCount = 0;
-    stageStatusResponses.ideation = 'completed'; // Will be returned on poll
 
     const orch = new PipelineOrchestrator('run-1');
-    await orch.checkApprovalGate('ideation');
+    await expect(orch.checkApprovalGate('ideation')).rejects.toThrow('Awaiting approval');
 
     const stageUpdates = dbOps.filter(
       (op) => op.table === 'run_stages' && op.op === 'update' && op.data?.status === 'awaiting_approval'
@@ -200,43 +194,24 @@ describe('checkApprovalGate', () => {
     expect(approvalInserts).toHaveLength(1);
   });
 
-  it('continues when stage is approved (status=completed)', async () => {
+  it('stores preview URL on the approval request when provided', async () => {
     hitlConfig.enabled = true;
-    stageStatusResponses.planning = 'completed';
 
     const orch = new PipelineOrchestrator('run-1');
-    await orch.checkApprovalGate('planning');
+    await expect(
+      orch.checkApprovalGate('development', 'https://preview.example.vercel.app')
+    ).rejects.toThrow('Awaiting approval');
 
-    // Should have logged approval
-    const logInserts = dbOps.filter((op) => op.table === 'logs' && op.op === 'insert');
-    expect(logInserts.length).toBeGreaterThanOrEqual(1);
-    expect(logInserts.some((op) => op.data?.content?.includes('Approval received'))).toBe(true);
-  });
+    const previewUpdate = dbOps.find(
+      (op) => op.table === 'approval_requests' && op.op === 'update' && op.data?.preview_url
+    );
+    expect(previewUpdate).toBeDefined();
+    expect(previewUpdate?.data.preview_url).toBe('https://preview.example.vercel.app');
 
-  it('throws RetryStageError when stage is rejected with retry (status=pending)', async () => {
-    hitlConfig.enabled = true;
-    stageStatusResponses.ideation = 'pending';
-
-    const orch = new PipelineOrchestrator('run-1');
-    await expect(orch.checkApprovalGate('ideation')).rejects.toThrow('Retry requested');
-  });
-
-  it('throws error when stage is rejected with cancel (status=cancelled)', async () => {
-    hitlConfig.enabled = true;
-    stageStatusResponses.development = 'cancelled';
-
-    const orch = new PipelineOrchestrator('run-1');
-    await expect(orch.checkApprovalGate('development')).rejects.toThrow('rejected');
-  });
-
-  it('respects cancelled flag during polling', async () => {
-    hitlConfig.enabled = true;
-    stageStatusResponses.ideation = 'awaiting_approval'; // Will keep polling
-
-    const orch = new PipelineOrchestrator('run-1');
-    // Cancel after a short delay
-    setTimeout(() => orch.cancel(), 100);
-
-    await expect(orch.checkApprovalGate('ideation')).rejects.toThrow('cancelled');
+    const stageUpdate = dbOps.find(
+      (op) => op.table === 'run_stages' && op.op === 'update' && op.data?.output_context?.preview_url
+    );
+    expect(stageUpdate).toBeDefined();
+    expect(stageUpdate?.data.output_context.preview_url).toBe('https://preview.example.vercel.app');
   });
 });
