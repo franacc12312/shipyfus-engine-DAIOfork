@@ -1,5 +1,6 @@
 import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { db } from '../services/db.js';
 import { env } from '../env.js';
 import { AgentRunner } from '../agents/runner.js';
@@ -25,7 +26,10 @@ import { buildStageApprovalRequest, createApprovalService, resolveAllPendingAppr
 import { appendStageMessage, formatPrdDraft, listStageMessages } from '../services/stage-messages.js';
 import { createStageContext } from './stage-context.js';
 
-const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
+const __pipedir = typeof import.meta.dirname === 'string'
+  ? import.meta.dirname
+  : dirname(fileURLToPath(import.meta.url));
+const PRODUCTS_DIR = resolve(__pipedir, '../../../../products');
 
 function buildStubHtml(productName: string): string {
   return `<!DOCTYPE html>

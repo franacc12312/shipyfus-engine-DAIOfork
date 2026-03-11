@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@daio/analytics": "workspace:*",
     "@daio/approval": "workspace:*",
     "@daio/brand": "workspace:*",
     "@daio/idea": "workspace:*",
@@ -22,6 +23,7 @@
     "@daio/shared": "workspace:*",
     "@daio/testing": "workspace:*",
     "@daio/social": "workspace:*",
+    "@daio/learnings": "workspace:*",
     "@daio/templates": "workspace:*",
     "@supabase/supabase-js": "^2.49.0",
     "cors": "^2.8.5",

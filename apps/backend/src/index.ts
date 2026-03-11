@@ -14,12 +14,14 @@ import productsRouter from './routes/products.js';
 import agentsRouter from './routes/agents.js';
 import hitlRouter from './routes/hitl.js';
 import participantsRouter from './routes/participants.js';
+import learningsRouter from './routes/learnings.js';
+import backlogRouter from './routes/backlog.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 
-app.use(cors({ origin: env.FRONTEND_URL }));
+app.use(cors());
 app.use(express.json());
 
 app.use('/api/health', healthRouter);
@@ -29,6 +31,8 @@ app.use('/api/products', productsRouter);
 app.use('/api/agents', agentsRouter);
 app.use('/api/hitl-config', hitlRouter);
 app.use('/api/participants', participantsRouter);
+app.use('/api/learnings', learningsRouter);
+app.use('/api/backlog', backlogRouter);
 
 app.use(errorHandler);
 

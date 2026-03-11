@@ -8,6 +8,7 @@ import { Constraints } from './pages/Constraints';
 import { Products } from './pages/Products';
 import { HitlConfig } from './pages/HitlConfig';
 import { Team } from './pages/Team';
+import Backlog from './pages/Backlog';
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="/hitl" element={<ErrorBoundary><HitlConfig /></ErrorBoundary>} />
           <Route path="/products" element={<ErrorBoundary><Products /></ErrorBoundary>} />
           <Route path="/team" element={<ErrorBoundary><Team /></ErrorBoundary>} />
+          <Route path="/backlog" element={<ErrorBoundary><Backlog /></ErrorBoundary>} />
         </Route>
       </Routes>
     </BrowserRouter>

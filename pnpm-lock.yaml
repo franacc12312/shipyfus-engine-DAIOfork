@@ -17,6 +17,9 @@ importers:
 
   apps/backend:
     dependencies:
+      '@daio/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@daio/approval':
         specifier: workspace:*
         version: link:../../packages/approval
@@ -26,6 +29,9 @@ importers:
       '@daio/idea':
         specifier: workspace:*
         version: link:../../packages/idea
+      '@daio/learnings':
+        specifier: workspace:*
+        version: link:../../packages/learnings
       '@daio/pipeline-core':
         specifier: workspace:*
         version: link:../../packages/pipeline-core
@@ -171,6 +177,12 @@ importers:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@24.10.13)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.2)(tsx@4.21.0)
 
+  packages/analytics:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+
   packages/approval:
     dependencies:
       '@daio/pipeline-core':
@@ -230,6 +242,12 @@ importers:
       vitest:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@24.10.13)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.2)(tsx@4.21.0)
+
+  packages/learnings:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
 
   packages/pipeline-core:
     dependencies:

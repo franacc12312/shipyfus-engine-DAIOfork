@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: '/hitl', label: 'HITL Gates', icon: '||' },
   { to: '/products', label: 'Products', icon: '*' },
   { to: '/team', label: 'Team', icon: '@' },
+  { to: '/backlog', label: 'Backlog', icon: '📋' },
 ];
 
 export function Layout() {

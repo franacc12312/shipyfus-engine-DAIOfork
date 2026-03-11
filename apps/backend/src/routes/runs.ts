@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { db } from '../services/db.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { env } from '../env.js';
@@ -9,7 +10,10 @@ import { rejectStageSchema, departmentSchema, approveStageSchema, startRunSchema
 import { resolveAllPendingApprovalRequests, resolvePendingApprovalRequest } from '../services/approvals.js';
 import { appendStageMessage, listStageMessages } from '../services/stage-messages.js';
 
-const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
+const __runsDir = typeof import.meta.dirname === 'string'
+  ? import.meta.dirname
+  : dirname(fileURLToPath(import.meta.url));
+const PRODUCTS_DIR = resolve(__runsDir, '../../../../products');
 
 const MAX_CONCURRENT_RUNS = 3;
 
