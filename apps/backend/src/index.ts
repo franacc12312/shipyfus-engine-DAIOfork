@@ -34,13 +34,16 @@ app.use('/api/participants', participantsRouter);
 app.use('/api/learnings', learningsRouter);
 app.use('/api/backlog', backlogRouter);
 
-app.use(errorHandler);
+// API error handler (only for /api routes)
+app.use('/api', errorHandler);
 
 // In production, serve the frontend static files
 const frontendDist = resolve(__dirname, '../../frontend/dist');
 if (existsSync(frontendDist)) {
   app.use(express.static(frontendDist));
-  app.get('/{*path}', (_req, res) => {
+  // SPA fallback: serve index.html for all non-API routes
+  app.use((_req, res, next) => {
+    if (_req.path.startsWith('/api')) return next();
     res.sendFile(resolve(frontendDist, 'index.html'));
   });
 }
