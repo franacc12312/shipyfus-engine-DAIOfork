@@ -850,7 +850,7 @@ export class PipelineOrchestrator {
     }
 
     try {
-      const prompt = buildDeveloperPrompt(config);
+      const prompt = buildDeveloperPrompt(config, template);
       const result = await this.runner.runLoop(prompt, {
         runId: this.runId,
         stage: 'development',

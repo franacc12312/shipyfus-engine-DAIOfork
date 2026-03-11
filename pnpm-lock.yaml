@@ -41,6 +41,9 @@ importers:
       '@daio/social':
         specifier: workspace:*
         version: link:../../packages/social
+      '@daio/templates':
+        specifier: workspace:*
+        version: link:../../packages/templates
       '@daio/testing':
         specifier: workspace:*
         version: link:../../packages/testing
@@ -211,6 +214,9 @@ importers:
       '@daio/shared':
         specifier: workspace:*
         version: link:../shared
+      '@daio/templates':
+        specifier: workspace:*
+        version: link:../templates
       zod:
         specifier: ^3.24.0
         version: 3.25.76
@@ -246,6 +252,9 @@ importers:
       '@daio/shared':
         specifier: workspace:*
         version: link:../shared
+      '@daio/templates':
+        specifier: workspace:*
+        version: link:../templates
       zod:
         specifier: ^3.24.0
         version: 3.25.76

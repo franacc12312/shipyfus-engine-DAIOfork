@@ -22,6 +22,7 @@
     "@daio/shared": "workspace:*",
     "@daio/testing": "workspace:*",
     "@daio/social": "workspace:*",
+    "@daio/templates": "workspace:*",
     "@supabase/supabase-js": "^2.49.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",
