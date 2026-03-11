@@ -334,73 +334,22 @@ const DEPARTMENT_FIELDS: Record<string, FieldDef[]> = {
   ],
 };
 
-// Smart defaults for "Surprise Me" - randomized but sensible
-const SMART_DEFAULTS: Record<string, () => Record<string, any>> = {
-  research: () => ({
-    enabled: true,
-    topics: pickN(['AI tools', 'developer productivity', 'crypto/DeFi', 'data visualization', 'browser extensions', 'automation', 'health/fitness tech', 'content creation'], 3).join(', '),
-    max_searches: pick([5, 8, 10]),
-    moat_threshold: pick([2, 3]),
-    max_competition: 'any',
-  }),
-  ideation: () => ({
-    platform: pick(['web', 'web', 'web', 'extension', 'cli', 'bot']),
-    audience: pick(['developer', 'developer', 'consumer', 'creator', 'trader']),
-    complexity: pick(['simple', 'simple', 'trivial', 'moderate']),
-    score_threshold: 13,
-    preferred_template: 'auto',
-    include_learnings: true,
-  }),
-  branding: () => ({
-    enabled: pick([true, false]),
-    max_domain_price: pick([0, 10, 15]),
-    preferred_tlds: '.com, .dev, .xyz',
-    auto_purchase: false,
-  }),
-  planning: () => ({
-    max_phases: pick([3, 4, 5]),
-    require_tests: true,
-    max_files_per_phase: pick([5, 8, 10]),
-    template_aware: true,
-  }),
-  testing: () => ({
-    framework: 'both',
-    require_e2e: true,
-    require_ac_tracing: true,
-    min_coverage: pick([80, 90, 100]),
-  }),
-  development: () => ({
-    framework: '',
-    language: 'typescript',
-    max_files: 20,
-    max_iterations: pick([10, 15, 20]),
-    max_budget_usd: pick([5, 10]),
-    tdd_mode: true,
-    use_progress_md: true,
-    inject_feedback: true,
-    inject_posthog: false,
-  }),
-  deployment: () => ({
-    provider: 'vercel',
-    auto_deploy: true,
-    preview_deploy: false,
-    connect_domain: true,
-  }),
-  distribution: () => ({
-    enabled: true,
-    twitter_enabled: true,
-    reddit_enabled: true,
-    reddit_draft_mode: true,
-    hackernews_enabled: pick([true, false]),
-    linkedin_enabled: false,
-    auto_post_twitter: false,
-  }),
-  analytics: () => ({
-    posthogKey: '',
-    feedbackEnabled: true,
-    feedbackTheme: 'dark',
-    feedbackAccent: '#f97316',
-  }),
+// Randomizable fields - only for creative/direction fields, not technical config
+const RANDOMIZABLE_FIELDS: Record<string, Record<string, () => any>> = {
+  research: {
+    topics: () => pickN([
+      'AI tools', 'developer productivity', 'crypto/DeFi', 'data visualization',
+      'browser extensions', 'automation', 'health/fitness tech', 'content creation',
+      'side project tools', 'privacy tools', 'open source', 'fintech',
+      'education tech', 'social media tools', 'design tools', 'API wrappers',
+      'devops', 'no-code/low-code', 'web3', 'biohacking',
+    ], 3).join(', '),
+  },
+  ideation: {
+    platform: () => pick(['web', 'web', 'web', 'extension', 'cli', 'bot', 'api']),
+    audience: () => pick(['developer', 'developer', 'consumer', 'creator', 'trader', 'business']),
+    complexity: () => pick(['simple', 'simple', 'trivial', 'moderate']),
+  },
 };
 
 function pick<T>(arr: T[]): T {
@@ -502,17 +451,19 @@ export function ConstraintForm({ department, blackbox = false }: ConstraintFormP
         <p className="text-[10px] text-zinc-600 mb-2">{description}</p>
       )}
 
-      {isAdmin && SMART_DEFAULTS[department] && !blackbox && (
+      {isAdmin && RANDOMIZABLE_FIELDS[department] && !blackbox && (
         <button
           onClick={() => {
-            const defaults = SMART_DEFAULTS[department]();
-            setConfig(defaults);
-            const rules = defaults.custom_rules;
-            setCustomRules(Array.isArray(rules) ? rules.join('\n') : '');
+            const randoms = RANDOMIZABLE_FIELDS[department];
+            const updated = { ...config };
+            for (const [key, gen] of Object.entries(randoms)) {
+              updated[key] = gen();
+            }
+            setConfig(updated);
           }}
           className="mb-3 px-3 py-1 rounded text-[10px] bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition"
         >
-          🎲 Randomize
+          🎲 Shuffle
         </button>
       )}
 
