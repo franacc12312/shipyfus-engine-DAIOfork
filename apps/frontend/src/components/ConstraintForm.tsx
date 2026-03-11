@@ -5,7 +5,6 @@ import type { Department } from '@daio/shared';
 
 interface ConstraintFormProps {
   department: Department;
-  blackbox?: boolean;
 }
 
 interface FieldDef {
@@ -405,7 +404,7 @@ function Tooltip({ text }: { text: string }) {
   );
 }
 
-export function ConstraintForm({ department, blackbox = false }: ConstraintFormProps) {
+export function ConstraintForm({ department }: ConstraintFormProps) {
   const { isAdmin } = useAuth();
   const [config, setConfig] = useState<Record<string, any>>({});
   const [customRules, setCustomRules] = useState('');
@@ -451,21 +450,7 @@ export function ConstraintForm({ department, blackbox = false }: ConstraintFormP
         <p className="text-[10px] text-zinc-600 mb-2">{description}</p>
       )}
 
-      {isAdmin && RANDOMIZABLE_FIELDS[department] && !blackbox && (
-        <button
-          onClick={() => {
-            const randoms = RANDOMIZABLE_FIELDS[department];
-            const updated = { ...config };
-            for (const [key, gen] of Object.entries(randoms)) {
-              updated[key] = gen();
-            }
-            setConfig(updated);
-          }}
-          className="mb-3 px-3 py-1 rounded text-[10px] bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition"
-        >
-          🎲 Shuffle
-        </button>
-      )}
+      {/* no global shuffle button - randomization is per-field */}
 
       <div className="space-y-3">
         {fields.map((field) => (
@@ -473,8 +458,28 @@ export function ConstraintForm({ department, blackbox = false }: ConstraintFormP
             <label className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1 flex items-center">
               {field.label}
               <Tooltip text={field.tooltip} />
+              {isAdmin && RANDOMIZABLE_FIELDS[department]?.[field.key] && (
+                <button
+                  onClick={() => {
+                    const randomKey = `_random_${field.key}`;
+                    setConfig({ ...config, [randomKey]: !config[randomKey] });
+                  }}
+                  className={`ml-auto px-1.5 py-0.5 rounded text-[9px] transition ${
+                    config[`_random_${field.key}`]
+                      ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+                      : 'bg-zinc-800 text-zinc-600 hover:text-zinc-400 border border-zinc-700'
+                  }`}
+                  title={config[`_random_${field.key}`] ? 'Click to set manually' : 'Click to auto-randomize each run'}
+                >
+                  🎲 {config[`_random_${field.key}`] ? 'AUTO' : 'auto'}
+                </button>
+              )}
             </label>
-            {field.type === 'select' ? (
+            {config[`_random_${field.key}`] ? (
+              <div className="w-full bg-zinc-900/50 border border-orange-500/20 rounded px-2 py-1.5 text-xs text-orange-400/60 italic">
+                ✨ Randomized each run
+              </div>
+            ) : field.type === 'select' ? (
               <select
                 value={config[field.key] || ''}
                 onChange={(e) => setConfig({ ...config, [field.key]: e.target.value })}
