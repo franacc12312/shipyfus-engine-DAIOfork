@@ -13,23 +13,23 @@ export class ResearchService {
     }
 
     const sourceNames = this.sources.map((s) => s.name);
-    await onLog?.(`Scanning ${this.sources.length} sources: ${sourceNames.join(', ')}`);
+    await this.logSafely(onLog, `Scanning ${this.sources.length} sources: ${sourceNames.join(', ')}`);
 
     const results = await Promise.all(
       this.sources.map(async (source) => {
-        await onLog?.(`--- ${source.name} ---`);
+        await this.logSafely(onLog, `--- ${source.name} ---`);
         try {
           const signals = await source.gather(context, apiKey);
           if (signals.length > 0) {
             const typeBreakdown = this.summarizeTypes(signals.map((s) => s.type));
-            await onLog?.(`${source.name} complete: ${signals.length} signals (${typeBreakdown})`);
+            await this.logSafely(onLog, `${source.name} complete: ${signals.length} signals (${typeBreakdown})`);
           } else {
-            await onLog?.(`${source.name} complete: no signals found`);
+            await this.logSafely(onLog, `${source.name} complete: no signals found`);
           }
           return { name: source.name, signals };
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          await onLog?.(`${source.name} failed: ${msg}`);
+          await this.logSafely(onLog, `${source.name} failed: ${msg}`);
           console.warn(`Research source "${source.name}" failed:`, err);
           return { name: source.name, signals: [] };
         }
@@ -46,7 +46,7 @@ export class ResearchService {
 
     if (allSignals.length > 0) {
       const typeBreakdown = this.summarizeTypes(allSignals.map((s) => s.type));
-      await onLog?.(`Total: ${allSignals.length} signals from ${sourcesUsed.length}/${this.sources.length} sources (${typeBreakdown})`);
+      await this.logSafely(onLog, `Total: ${allSignals.length} signals from ${sourcesUsed.length}/${this.sources.length} sources (${typeBreakdown})`);
     }
 
     return {
@@ -66,5 +66,15 @@ export class ResearchService {
       .sort((a, b) => b[1] - a[1])
       .map(([type, count]) => `${count} ${type}`)
       .join(', ');
+  }
+
+  private async logSafely(onLog: ResearchLogFn | undefined, message: string): Promise<void> {
+    if (!onLog) return;
+
+    try {
+      await onLog(message);
+    } catch (err) {
+      console.warn('Research logging failed:', err);
+    }
   }
 }

@@ -504,7 +504,13 @@ export class PipelineOrchestrator {
     try {
       // Step 1: Pure API calls — gather raw data from all sources
       const agentId = this.agentMap.get('research');
-      const log = (msg: string) => this.insertLog('research', msg, { event_type: 'assistant', agent_id: agentId });
+      const log = async (msg: string) => {
+        try {
+          await this.insertLog('research', msg, { event_type: 'assistant', agent_id: agentId });
+        } catch (err) {
+          console.warn(`Run ${this.runId}: failed to insert research log`, err);
+        }
+      };
 
       const service = new ResearchService();
       service.addSource(new TavilySource(undefined, log));

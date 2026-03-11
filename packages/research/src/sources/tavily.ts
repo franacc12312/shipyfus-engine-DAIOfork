@@ -49,10 +49,10 @@ export class TavilySource implements ResearchSource {
     for (const query of queries) {
       const fullQuery = this.sitePrefix ? `${this.sitePrefix} ${query}` : query;
       try {
-        await this.onLog?.(`  Searching: "${query}"`);
+        await this.logSafely(`  Searching: "${query}"`);
         const results = await this.search(fullQuery, apiKey);
         if (results.length > 0) {
-          await this.onLog?.(`  Found ${results.length} results`);
+          await this.logSafely(`  Found ${results.length} results`);
           for (const result of results) {
             signals.push({
               source: this.name,
@@ -64,10 +64,10 @@ export class TavilySource implements ResearchSource {
             });
           }
         } else {
-          await this.onLog?.(`  No results for this query`);
+          await this.logSafely('  No results for this query');
         }
       } catch (err) {
-        await this.onLog?.(`  Query failed: ${err instanceof Error ? err.message : String(err)}`);
+        await this.logSafely(`  Query failed: ${err instanceof Error ? err.message : String(err)}`);
         console.warn(`Tavily search failed for "${fullQuery}":`, err);
       }
     }
@@ -93,5 +93,15 @@ export class TavilySource implements ResearchSource {
 
     const data = (await response.json()) as TavilySearchResponse;
     return data.results ?? [];
+  }
+
+  protected async logSafely(message: string): Promise<void> {
+    if (!this.onLog) return;
+
+    try {
+      await this.onLog(message);
+    } catch (err) {
+      console.warn(`Research logging failed for "${this.name}":`, err);
+    }
   }
 }

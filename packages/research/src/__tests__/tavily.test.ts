@@ -135,4 +135,26 @@ describe('TavilySource', () => {
     const body = JSON.parse(call[1]?.body as string);
     expect(body.query).toContain('site:producthunt.com');
   });
+
+  it('logs query progress without blocking results when logger rejects', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          { title: 'Test Result', url: 'https://example.com', content: 'Some content', score: 0.9 },
+        ],
+      }),
+    } as Response);
+
+    const onLog = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('log failed'));
+
+    const source = new TavilySource(undefined, onLog);
+    const signals = await source.gather({ theme: 'AI tools' }, 'test-key');
+
+    expect(signals).toHaveLength(1);
+    expect(onLog).toHaveBeenNthCalledWith(1, '  Searching: "AI tools software trends 2026"');
+    expect(onLog).toHaveBeenNthCalledWith(2, '  Found 1 results');
+  });
 });

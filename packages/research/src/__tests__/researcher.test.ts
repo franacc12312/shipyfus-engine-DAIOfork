@@ -104,4 +104,19 @@ describe('ResearchService', () => {
     expect(result.sourcesUsed).toEqual(['working']);
     expect(result.sourcesUsed).not.toContain('broken');
   });
+
+  it('keeps gathering when logger rejects', async () => {
+    const service = new ResearchService();
+    service.addSource(mockSource('src1', [
+      { source: 'src1', type: 'trend', title: 'T1', summary: 'S1', relevance: 0.9 },
+    ]));
+
+    const onLog = vi.fn().mockRejectedValue(new Error('log failed'));
+
+    const result = await service.gather({ theme: 'AI' }, 'key', onLog);
+
+    expect(result.signals).toHaveLength(1);
+    expect(result.sourcesUsed).toEqual(['src1']);
+    expect(onLog).toHaveBeenCalledWith('Scanning 1 sources: src1');
+  });
 });
