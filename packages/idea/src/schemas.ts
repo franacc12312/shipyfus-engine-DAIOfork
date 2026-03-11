@@ -16,4 +16,12 @@ export const productPRDSchema = z.object({
   mvpScope: z.string().min(1),
   successCriteria: z.array(z.string().min(1)).min(1),
   uniqueValue: z.string().min(1),
+  scoring: z.object({
+    viralPotential: z.number().min(1).max(5),
+    executionEase: z.number().min(1).max(5),
+    distributionClarity: z.number().min(1).max(5),
+    moatScore: z.number().min(1).max(5),
+    totalScore: z.number().min(0).max(25),
+    reasoning: z.string().optional(),
+  }).optional(),
 });

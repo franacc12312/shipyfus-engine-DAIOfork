@@ -273,4 +273,12 @@ export interface ProductPRD {
   mvpScope: string;
   successCriteria: string[];
   uniqueValue: string;
+  scoring?: {
+    viralPotential: number;
+    executionEase: number;
+    distributionClarity: number;
+    moatScore: number;
+    totalScore: number;
+    reasoning?: string;
+  };
 }

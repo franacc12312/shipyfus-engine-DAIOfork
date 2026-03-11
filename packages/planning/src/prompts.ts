@@ -1,6 +1,7 @@
 import type { AnalyticsConfig, PlanningConfig, ProductPRD } from '@daio/shared';
+import type { Template } from '@daio/templates';
 
-export function buildPlannerPrompt(prd: ProductPRD, config: PlanningConfig, analytics?: AnalyticsConfig): string {
+export function buildPlannerPrompt(prd: ProductPRD, config: PlanningConfig, analytics?: AnalyticsConfig, template?: Template): string {
   const analyticsSection = analytics?.enabled !== false && analytics?.provider !== 'none' ? `
 
 ## Analytics Integration
@@ -12,7 +13,17 @@ For richer tracking, include these in the plan:
 - Use \`posthog.capture('event_name', { properties })\` for important user interactions
 Note: The API key will be provided at build time. Use an environment variable like \`VITE_POSTHOG_KEY\` or \`NEXT_PUBLIC_POSTHOG_KEY\`.` : '';
 
+  const templateSection = template ? `
+## Template
+This project uses a pre-built template: ${template.name} (${template.description}).
+Template repo: ${template.repo}
+Tech stack: ${template.techStack.join(', ')}
+
+The template is already scaffolded and cloned into the project directory. Plan the implementation as modifications to the existing template files, not from scratch. The developer will build on top of the template code.
+` : '';
+
   return `You are an AI software architect. Convert this product requirement document (PRD) into a structured execution plan.
+${templateSection}
 
 ## Product PRD
 \`\`\`json

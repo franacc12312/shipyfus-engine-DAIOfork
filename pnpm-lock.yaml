@@ -41,6 +41,9 @@ importers:
       '@daio/social':
         specifier: workspace:*
         version: link:../../packages/social
+      '@daio/testing':
+        specifier: workspace:*
+        version: link:../../packages/testing
       '@supabase/supabase-js':
         specifier: ^2.49.0
         version: 2.95.3
@@ -287,6 +290,18 @@ importers:
       vitest:
         specifier: ^3.0.0
         version: 3.2.4(@types/node@24.10.13)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.2)(tsx@4.21.0)
+
+  packages/templates:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+
+  packages/testing:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
 
 packages:
 

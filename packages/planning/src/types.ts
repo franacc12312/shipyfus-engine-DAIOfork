@@ -1,4 +1,5 @@
 import type { AnalyticsConfig, PlanningConfig, ProductPRD } from '@daio/shared';
+import type { Template } from '@daio/templates';
 
 export interface PlanMetadata {
   planFilePath?: string;
@@ -12,6 +13,7 @@ export interface PlanningStageInput {
   prd: ProductPRD;
   config: PlanningConfig;
   analytics?: AnalyticsConfig;
+  template?: Template;
   agentId?: string;
   maxBudgetUsd?: number;
 }

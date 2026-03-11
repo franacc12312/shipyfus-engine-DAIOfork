@@ -13,6 +13,7 @@
   "dependencies": {
     "@daio/pipeline-core": "workspace:*",
     "@daio/shared": "workspace:*",
+    "@daio/templates": "workspace:*",
     "zod": "^3.24.0"
   },
   "devDependencies": {

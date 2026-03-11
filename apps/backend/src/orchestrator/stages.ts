@@ -11,9 +11,10 @@ export const STAGE_DEFINITIONS: Record<string, StageDefinition> = {
   ideation: { name: 'ideation', mode: 'oneshot', order: 1 },
   branding: { name: 'branding', mode: 'oneshot', order: 2 },
   planning: { name: 'planning', mode: 'oneshot', order: 3 },
-  development: { name: 'development', mode: 'loop', order: 4 },
-  deployment: { name: 'deployment', mode: 'oneshot', order: 5 },
-  distribution: { name: 'distribution', mode: 'oneshot', order: 6 },
+  testing: { name: 'testing', mode: 'oneshot', order: 4 },
+  development: { name: 'development', mode: 'loop', order: 5 },
+  deployment: { name: 'deployment', mode: 'oneshot', order: 6 },
+  distribution: { name: 'distribution', mode: 'oneshot', order: 7 },
 };
 
-export const STAGE_ORDER = ['research', 'ideation', 'branding', 'planning', 'development', 'deployment', 'distribution'] as const;
+export const STAGE_ORDER = ['research', 'ideation', 'branding', 'planning', 'testing', 'development', 'deployment', 'distribution'] as const;

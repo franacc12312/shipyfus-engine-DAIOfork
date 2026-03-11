@@ -7,7 +7,7 @@ export function createPlanningStage(): PipelineStage<PlanningStageInput, Plannin
   return {
     id: 'planning',
     async run(ctx, input) {
-      const prompt = buildPlannerPrompt(input.prd, input.config, input.analytics);
+      const prompt = buildPlannerPrompt(input.prd, input.config, input.analytics, input.template);
       const result = await ctx.runner.runOnce(prompt, {
         runId: ctx.runId,
         stage: 'planning',

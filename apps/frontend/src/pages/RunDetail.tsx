@@ -11,6 +11,8 @@ import { DocumentViewer } from '../components/DocumentViewer';
 import { AdminGate } from '../components/AdminGate';
 import { ApprovalGate } from '../components/ApprovalGate';
 import { InteractiveStagePanel } from '../components/InteractiveStagePanel';
+import { ScoreCard } from '../components/ScoreCard';
+import { MarketAnalysis, type MarketAnalysisData } from '../components/MarketAnalysis';
 import { api } from '../lib/api';
 import { STAGES, type ApprovalRequest, type Department } from '@daio/shared';
 
@@ -261,6 +263,37 @@ export function RunDetail() {
               <div className="text-xs text-zinc-300">{run.idea_summary}</div>
             </div>
           )}
+
+          {/* Idea Scoring */}
+          {(() => {
+            const ideationStage = run.run_stages?.find((s) => s.stage === 'ideation');
+            const ctx = ideationStage?.output_context as Record<string, unknown> | undefined;
+            const prd = ctx?.prd as Record<string, unknown> | undefined;
+            const scoring = prd?.scoring as { viralPotential: number; executionEase: number; distributionClarity: number; moatScore: number; totalScore: number } | undefined;
+            if (!scoring) return null;
+            const researchStage = run.run_stages?.find((s) => s.stage === 'research');
+            const researchCtx = researchStage?.output_context as Record<string, unknown> | undefined;
+            const marketAnalysis = researchCtx?.marketAnalysis as MarketAnalysisData | undefined;
+            return (
+              <ScoreCard
+                viralPotential={scoring.viralPotential}
+                executionEase={scoring.executionEase}
+                distributionClarity={scoring.distributionClarity}
+                moatScore={scoring.moatScore}
+                totalScore={scoring.totalScore}
+                marketVerdict={marketAnalysis?.verdict}
+              />
+            );
+          })()}
+
+          {/* Market Analysis */}
+          {(() => {
+            const researchStage = run.run_stages?.find((s) => s.stage === 'research');
+            const ctx = researchStage?.output_context as Record<string, unknown> | undefined;
+            const marketAnalysis = ctx?.marketAnalysis as MarketAnalysisData | undefined;
+            if (!marketAnalysis) return null;
+            return <MarketAnalysis data={marketAnalysis} />;
+          })()}
 
           {approvalRequests.length > 0 && (
             <div className="overflow-hidden rounded-lg border border-zinc-800 bg-zinc-950">

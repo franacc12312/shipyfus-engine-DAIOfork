@@ -16,6 +16,7 @@ import { ResearchService, TavilySource, ProductHuntSource, HackerNewsSource, Red
 import type { RawResearchData, ResearchContext } from '@daio/research';
 import type { PorkbunConfig } from '@daio/brand';
 import type { TwitterConfig } from '@daio/social';
+import { getTemplate, recommendTemplate, type Template } from '@daio/templates';
 import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, DistributionConfig, AnalyticsConfig, ProductPRD, Department, HitlConfig, DomainChoice, StageInteractionMode } from '@daio/shared';
 import { getRandomRetryMessage } from '@daio/shared';
 import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl, deployPreview } from '../services/vercel.js';
@@ -382,6 +383,12 @@ export class PipelineOrchestrator {
       }
     }
 
+    // Resolve template from ideation output (recommendedTemplate field) or description
+    const recommendedTemplateName = (prd as unknown as Record<string, unknown>).recommendedTemplate as string | undefined;
+    const selectedTemplate: Template | undefined =
+      (recommendedTemplateName ? getTemplate(recommendedTemplateName) : undefined)
+      ?? recommendTemplate(prd.productDescription);
+
     // Stage 3: Planning
     const planningStage = getStatus('planning');
     if (planningStage?.status === 'completed') {
@@ -392,7 +399,7 @@ export class PipelineOrchestrator {
       throw new Error('Planning previously failed');
     } else {
       if (this.cancelled) return;
-      await this.runPlanning(prd, constraints.planning, productDir, constraints.development.analytics);
+      await this.runPlanning(prd, constraints.planning, productDir, constraints.development.analytics, selectedTemplate);
       await this.checkApprovalGate('planning');
     }
 
@@ -407,7 +414,7 @@ export class PipelineOrchestrator {
       throw new Error('Development previously failed');
     } else {
       if (this.cancelled) return;
-      await this.runDevelopment(constraints.development, productDir, prd.productName);
+      await this.runDevelopment(constraints.development, productDir, prd.productName, selectedTemplate);
       const previewUrl = await this.deployPreviewIfNeeded(productDir);
       await this.checkApprovalGate('development', previewUrl);
     }
@@ -787,7 +794,7 @@ export class PipelineOrchestrator {
     return (data?.output_context as Record<string, unknown>) ?? null;
   }
 
-  private async runPlanning(prd: ProductPRD, config: PlanningConfig, productDir: string, analytics?: AnalyticsConfig): Promise<void> {
+  private async runPlanning(prd: ProductPRD, config: PlanningConfig, productDir: string, analytics?: AnalyticsConfig, template?: Template): Promise<void> {
     await this.updateStageStatus('planning', 'running');
 
     try {
@@ -803,6 +810,7 @@ export class PipelineOrchestrator {
         prd,
         config,
         analytics,
+        template,
         agentId: this.agentMap.get('planning'),
       });
 
@@ -826,7 +834,7 @@ export class PipelineOrchestrator {
     }
   }
 
-  private async runDevelopment(config: DevelopmentConfig, productDir: string, productName: string): Promise<{ iterations: number; completed: boolean }> {
+  private async runDevelopment(config: DevelopmentConfig, productDir: string, productName: string, template?: Template): Promise<{ iterations: number; completed: boolean }> {
     await this.updateStageStatus('development', 'running');
 
     if (config.enabled === false) {
