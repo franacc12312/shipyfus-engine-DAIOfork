@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { db } from '../services/db.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireAdmin, requireAuth } from '../middleware/auth.js';
 import { env } from '../env.js';
 import { startPipeline, resumePipeline, cancelPipeline, getActivePipelineCount } from '../orchestrator/pipeline.js';
 import { rejectStageSchema, departmentSchema, approveStageSchema, startRunSchema, STAGES, submitStageMessageSchema } from '@daio/shared';
@@ -15,13 +15,18 @@ const MAX_CONCURRENT_RUNS = 3;
 
 const router = Router();
 
-router.get('/', async (req, res, next) => {
+router.get('/', requireAuth, async (req, res, next) => {
   try {
     let query = db
       .from('runs')
       .select('*, run_stages(*)')
       .order('created_at', { ascending: false })
       .limit(50);
+
+    // Non-admin users only see their own runs
+    if (!req.isAdmin) {
+      query = query.eq('triggered_by', req.userId!);
+    }
 
     // Filter out test runs unless ?include_test=true
     if (req.query.include_test !== 'true') {
@@ -36,7 +41,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/:id', async (req, res, next) => {
+router.get('/:id', requireAuth, async (req, res, next) => {
   try {
     const { data, error } = await db
       .from('runs')
@@ -68,7 +73,7 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-router.get('/:id/logs', async (req, res, next) => {
+router.get('/:id/logs', requireAuth, async (req, res, next) => {
   try {
     const { data, error } = await db
       .from('logs')
@@ -83,7 +88,7 @@ router.get('/:id/logs', async (req, res, next) => {
   }
 });
 
-router.get('/:id/documents', async (req, res, next) => {
+router.get('/:id/documents', requireAuth, async (req, res, next) => {
   try {
     const runId = String(req.params.id);
     const thoughtsDir = resolve(PRODUCTS_DIR, runId, 'thoughts');
@@ -190,7 +195,7 @@ router.post('/', requireAdmin, async (req, res, next) => {
       .from('runs')
       .insert({
         status: 'queued',
-        triggered_by: env.OWNER_USER_ID,
+        triggered_by: req.userId!,
         metadata: runMetadata,
       })
       .select()
