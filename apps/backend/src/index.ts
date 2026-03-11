@@ -5,6 +5,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { env } from './env.js';
 import { errorHandler } from './middleware/errors.js';
+import { requireAuth } from './middleware/auth.js';
 import { db } from './services/db.js';
 import { resumePipeline } from './orchestrator/pipeline.js';
 import healthRouter from './routes/health.js';
@@ -14,6 +15,7 @@ import productsRouter from './routes/products.js';
 import agentsRouter from './routes/agents.js';
 import hitlRouter from './routes/hitl.js';
 import participantsRouter from './routes/participants.js';
+import settingsRouter from './routes/settings.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -29,6 +31,7 @@ app.use('/api/products', productsRouter);
 app.use('/api/agents', agentsRouter);
 app.use('/api/hitl-config', hitlRouter);
 app.use('/api/participants', participantsRouter);
+app.use('/api/settings', requireAuth, settingsRouter);
 
 app.use(errorHandler);
 
