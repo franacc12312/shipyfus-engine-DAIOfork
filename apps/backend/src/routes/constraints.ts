@@ -1,16 +1,33 @@
 import { Router } from 'express';
 import { db } from '../services/db.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireAuth } from '../middleware/auth.js';
 import { constraintConfigSchemas, departmentSchema } from '@daio/shared';
 import type { Department } from '@daio/shared';
 
 const router = Router();
 
-router.get('/', async (_req, res, next) => {
+/**
+ * Ensure user has their own constraints. If none exist, seed from defaults.
+ */
+async function ensureUserConstraints(userId: string): Promise<void> {
+  const { count } = await db
+    .from('constraints')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId);
+
+  if (!count || count === 0) {
+    await db.rpc('seed_user_constraints', { p_user_id: userId });
+  }
+}
+
+router.get('/', requireAuth, async (req, res, next) => {
   try {
+    await ensureUserConstraints(req.userId!);
+
     const { data, error } = await db
       .from('constraints')
       .select('*')
+      .eq('user_id', req.userId!)
       .order('department');
 
     if (error) throw error;
@@ -20,7 +37,7 @@ router.get('/', async (_req, res, next) => {
   }
 });
 
-router.get('/:department', async (req, res, next) => {
+router.get('/:department', requireAuth, async (req, res, next) => {
   try {
     const parsed = departmentSchema.safeParse(req.params.department);
     if (!parsed.success) {
@@ -28,10 +45,13 @@ router.get('/:department', async (req, res, next) => {
       return;
     }
 
+    await ensureUserConstraints(req.userId!);
+
     const { data, error } = await db
       .from('constraints')
       .select('*')
       .eq('department', parsed.data)
+      .eq('user_id', req.userId!)
       .single();
 
     if (error) throw error;
@@ -46,7 +66,7 @@ router.get('/:department', async (req, res, next) => {
   }
 });
 
-router.put('/:department', requireAdmin, async (req, res, next) => {
+router.put('/:department', requireAuth, async (req, res, next) => {
   try {
     const parsed = departmentSchema.safeParse(req.params.department);
     if (!parsed.success) {
@@ -62,6 +82,8 @@ router.put('/:department', requireAdmin, async (req, res, next) => {
       return;
     }
 
+    await ensureUserConstraints(req.userId!);
+
     const { data, error } = await db
       .from('constraints')
       .update({
@@ -70,6 +92,7 @@ router.put('/:department', requireAdmin, async (req, res, next) => {
         updated_by: req.userId,
       })
       .eq('department', department)
+      .eq('user_id', req.userId!)
       .select()
       .single();
 
