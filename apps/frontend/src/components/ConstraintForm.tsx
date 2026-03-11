@@ -333,6 +333,84 @@ const DEPARTMENT_FIELDS: Record<string, FieldDef[]> = {
   ],
 };
 
+// Smart defaults for "Surprise Me" - randomized but sensible
+const SMART_DEFAULTS: Record<string, () => Record<string, any>> = {
+  research: () => ({
+    enabled: true,
+    topics: pickN(['AI tools', 'developer productivity', 'crypto/DeFi', 'data visualization', 'browser extensions', 'automation', 'health/fitness tech', 'content creation'], 3).join(', '),
+    max_searches: pick([5, 8, 10]),
+    moat_threshold: pick([2, 3]),
+    max_competition: 'any',
+  }),
+  ideation: () => ({
+    platform: pick(['web', 'web', 'web', 'extension', 'cli', 'bot']),
+    audience: pick(['developer', 'developer', 'consumer', 'creator', 'trader']),
+    complexity: pick(['simple', 'simple', 'trivial', 'moderate']),
+    score_threshold: 13,
+    preferred_template: 'auto',
+    include_learnings: true,
+  }),
+  branding: () => ({
+    enabled: pick([true, false]),
+    max_domain_price: pick([0, 10, 15]),
+    preferred_tlds: '.com, .dev, .xyz',
+    auto_purchase: false,
+  }),
+  planning: () => ({
+    max_phases: pick([3, 4, 5]),
+    require_tests: true,
+    max_files_per_phase: pick([5, 8, 10]),
+    template_aware: true,
+  }),
+  testing: () => ({
+    framework: 'both',
+    require_e2e: true,
+    require_ac_tracing: true,
+    min_coverage: pick([80, 90, 100]),
+  }),
+  development: () => ({
+    framework: '',
+    language: 'typescript',
+    max_files: 20,
+    max_iterations: pick([10, 15, 20]),
+    max_budget_usd: pick([5, 10]),
+    tdd_mode: true,
+    use_progress_md: true,
+    inject_feedback: true,
+    inject_posthog: false,
+  }),
+  deployment: () => ({
+    provider: 'vercel',
+    auto_deploy: true,
+    preview_deploy: false,
+    connect_domain: true,
+  }),
+  distribution: () => ({
+    enabled: true,
+    twitter_enabled: true,
+    reddit_enabled: true,
+    reddit_draft_mode: true,
+    hackernews_enabled: pick([true, false]),
+    linkedin_enabled: false,
+    auto_post_twitter: false,
+  }),
+  analytics: () => ({
+    posthogKey: '',
+    feedbackEnabled: true,
+    feedbackTheme: 'dark',
+    feedbackAccent: '#f97316',
+  }),
+};
+
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function pickN<T>(arr: T[], n: number): T[] {
+  const shuffled = [...arr].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, n);
+}
+
 const DEPARTMENT_DESCRIPTIONS: Record<string, string> = {
   research: 'Market research and competitor analysis before ideation',
   ideation: 'Idea generation, scoring, and PRD creation',
@@ -347,22 +425,30 @@ const DEPARTMENT_DESCRIPTIONS: Record<string, string> = {
 
 function Tooltip({ text }: { text: string }) {
   const [show, setShow] = useState(false);
+  const [pos, setPos] = useState<'above' | 'below'>('above');
+
+  function handleEnter(e: React.MouseEvent<HTMLButtonElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPos(rect.top < 200 ? 'below' : 'above');
+    setShow(true);
+  }
 
   return (
     <span className="relative inline-block ml-1">
       <button
         type="button"
-        onMouseEnter={() => setShow(true)}
+        onMouseEnter={handleEnter}
         onMouseLeave={() => setShow(false)}
-        onClick={() => setShow(!show)}
+        onClick={(e) => { handleEnter(e); setShow(!show); }}
         className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-zinc-800 text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300 text-[9px] font-bold cursor-help transition"
       >
         ?
       </button>
       {show && (
-        <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-2.5 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl text-xs text-zinc-300 leading-relaxed">
+        <div className={`absolute z-50 left-0 w-72 p-2.5 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl text-[11px] text-zinc-300 leading-relaxed normal-case tracking-normal font-normal ${
+          pos === 'above' ? 'bottom-full mb-2' : 'top-full mt-2'
+        }`}>
           {text}
-          <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-zinc-700" />
         </div>
       )}
     </span>
@@ -412,7 +498,21 @@ export function ConstraintForm({ department }: ConstraintFormProps) {
         {department}
       </h3>
       {description && (
-        <p className="text-[10px] text-zinc-600 mb-4">{description}</p>
+        <p className="text-[10px] text-zinc-600 mb-2">{description}</p>
+      )}
+
+      {isAdmin && SMART_DEFAULTS[department] && (
+        <button
+          onClick={() => {
+            const defaults = SMART_DEFAULTS[department]();
+            setConfig(defaults);
+            const rules = defaults.custom_rules;
+            setCustomRules(Array.isArray(rules) ? rules.join('\n') : '');
+          }}
+          className="mb-3 px-3 py-1 rounded text-[10px] bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition"
+        >
+          🎲 Surprise Me
+        </button>
       )}
 
       <div className="space-y-3">

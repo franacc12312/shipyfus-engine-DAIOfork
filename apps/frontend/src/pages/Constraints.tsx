@@ -24,12 +24,12 @@ export function Constraints() {
         <div>
           <h2 className="text-lg font-bold text-zinc-100 tracking-wider">CONSTRAINTS</h2>
           <p className="text-xs text-zinc-500 mt-1">
-            Configure pipeline parameters per stage. Hover the <span className="inline-flex items-center justify-center w-3 h-3 rounded-full bg-zinc-800 text-zinc-500 text-[8px] font-bold">?</span> icons for details on each setting.
+            Configure pipeline parameters per stage. Hover <span className="inline-flex items-center justify-center w-3 h-3 rounded-full bg-zinc-800 text-zinc-500 text-[8px] font-bold">?</span> for details. Or hit 🎲 to randomize.
           </p>
         </div>
         {!isAdmin && (
           <span className="text-[10px] text-zinc-500 border border-zinc-700 rounded px-2 py-1">
-            READ ONLY — login to edit
+            READ ONLY
           </span>
         )}
       </div>
