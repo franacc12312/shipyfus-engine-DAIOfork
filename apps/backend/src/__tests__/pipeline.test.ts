@@ -358,6 +358,37 @@ describe('PipelineOrchestrator', () => {
     expect(domainUpdate!.data.domain_name).toBe('testbrand.xyz');
   });
 
+  it('pauses after development when approval is required and does not deploy', async () => {
+    mockHitlConfig.enabled = true;
+    mockHitlConfig.gate_after_ideation = false;
+    mockHitlConfig.gate_after_branding = false;
+    mockHitlConfig.gate_after_planning = false;
+    mockHitlConfig.gate_after_development = true;
+
+    const orch = new PipelineOrchestrator('run-1');
+    await orch.execute();
+
+    expect(mockRunOnce).toHaveBeenCalledTimes(4);
+
+    const approvalInsert = dbOps.find(
+      (op) => op.table === 'approval_requests' && op.op === 'insert' && op.data?.stage === 'development'
+    );
+    expect(approvalInsert).toBeDefined();
+
+    const awaitingUpdate = dbOps.find(
+      (op) => op.table === 'run_stages' && op.op === 'update' && op.data?.status === 'awaiting_approval'
+    );
+    expect(awaitingUpdate).toBeDefined();
+
+    const completedRunUpdate = dbOps.find(
+      (op) => op.table === 'runs' && op.op === 'update' && op.data?.status === 'completed'
+    );
+    expect(completedRunUpdate).toBeUndefined();
+
+    const productInsert = dbOps.find((op) => op.table === 'products' && op.op === 'insert');
+    expect(productInsert).toBeUndefined();
+  });
+
   it('handles branding failure and marks run failed', async () => {
     mockRunOnce.mockReset();
     // Ideation succeeds

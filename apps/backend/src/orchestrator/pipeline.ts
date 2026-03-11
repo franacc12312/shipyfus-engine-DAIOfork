@@ -49,6 +49,15 @@ export class RetryStageError extends Error {
   }
 }
 
+export class AwaitingApprovalError extends Error {
+  stage: string;
+  constructor(stage: string) {
+    super(`Awaiting approval for stage: ${stage}`);
+    this.name = 'AwaitingApprovalError';
+    this.stage = stage;
+  }
+}
+
 export class PipelineOrchestrator {
   private runner: AgentRunner;
   private runId: string;
@@ -253,8 +262,9 @@ export class PipelineOrchestrator {
   }
 
   private async runPipelineWithRetry(): Promise<void> {
-    // Loop handles RetryStageError: when a stage is rejected with "retry",
-    // runPipeline re-reads stage statuses from DB and re-runs the pending stage
+    // Loop handles:
+    // - RetryStageError: stage was rejected with "retry", so re-read DB state and re-run.
+    // - AwaitingApprovalError: stage is paused for human review, so stop this orchestrator.
     while (!this.cancelled) {
       try {
         await this.runPipeline();
@@ -263,6 +273,10 @@ export class PipelineOrchestrator {
         if (err instanceof RetryStageError) {
           console.log(`Run ${this.runId}: retrying stage ${err.stage}`);
           continue; // Re-run the pipeline (it will skip completed stages)
+        }
+        if (err instanceof AwaitingApprovalError) {
+          console.log(`Run ${this.runId}: paused for approval at stage ${err.stage}`);
+          return;
         }
         throw err; // Re-throw non-retry errors
       }
@@ -1086,16 +1100,44 @@ export class PipelineOrchestrator {
       await this.updateStageStatus(stage, 'awaiting_approval');
     }
 
+    const outputContext = (stageData.output_context && typeof stageData.output_context === 'object')
+      ? { ...(stageData.output_context as Record<string, unknown>) }
+      : {};
+
     const publication = await createApprovalService(this.runId).publish(
-      buildStageApprovalRequest(stage, stageData.output_context ?? {}),
+      buildStageApprovalRequest(stage, outputContext),
     );
 
     // Store preview URL on the approval request if provided
     if (previewUrl) {
-      await db
+      const nextOutputContext = {
+        ...outputContext,
+        preview_url: previewUrl,
+      };
+
+      const [{ error: approvalPreviewError }, { error: stagePreviewError }] = await Promise.all([
+        db
         .from('approval_requests')
         .update({ preview_url: previewUrl })
-        .eq('id', publication.requestId);
+        .eq('id', publication.requestId),
+        db
+          .from('run_stages')
+          .update({ output_context: nextOutputContext })
+          .eq('run_id', this.runId)
+          .eq('stage', stage),
+      ]);
+
+      if (approvalPreviewError || stagePreviewError) {
+        const details = [
+          approvalPreviewError ? `approval_request=${approvalPreviewError.message ?? String(approvalPreviewError)}` : null,
+          stagePreviewError ? `run_stage=${stagePreviewError.message ?? String(stagePreviewError)}` : null,
+        ].filter(Boolean).join(', ');
+
+        await this.insertLog(
+          stage,
+          `WARNING: Preview deployed but its URL could not be fully persisted. ${details}`,
+        );
+      }
     }
 
     await this.insertLog(
@@ -1103,47 +1145,7 @@ export class PipelineOrchestrator {
       `Stage "${stage}" complete. Waiting for human approval before proceeding...${previewUrl ? ` Preview: ${previewUrl}` : ''} [request=${publication.requestId}]`,
     );
 
-    // Poll every 3s until approved, retried, or cancelled
-    const POLL_INTERVAL = 3000;
-    while (!this.cancelled) {
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
-
-      if (this.cancelled) {
-        throw new Error('Pipeline cancelled while awaiting approval');
-      }
-
-      const { data: polledStageData } = await db
-        .from('run_stages')
-        .select('status')
-        .eq('run_id', this.runId)
-        .eq('stage', stage)
-        .single();
-
-      if (!polledStageData) {
-        throw new Error(`Stage ${stage} not found during approval polling`);
-      }
-
-      if (polledStageData.status === 'completed') {
-        // Approved — continue pipeline
-        await this.insertLog(stage, `Approval received for "${stage}". Continuing pipeline.`);
-        return;
-      }
-
-      if (polledStageData.status === 'pending') {
-        // Rejected with retry — re-run the stage
-        await this.insertLog(stage, `${getRandomRetryMessage()} Retrying "${stage}"...`);
-        throw new RetryStageError(stage);
-      }
-
-      if (polledStageData.status === 'cancelled' || polledStageData.status === 'failed') {
-        // Rejected with cancel
-        throw new Error(`Stage "${stage}" rejected — pipeline cancelled`);
-      }
-
-      // Still awaiting_approval — keep polling
-    }
-
-    throw new Error('Pipeline cancelled while awaiting approval');
+    throw new AwaitingApprovalError(stage);
   }
 
   private async checkInteractiveGate(stage: Department): Promise<void> {
@@ -1389,6 +1391,11 @@ export class PipelineOrchestrator {
 const activeOrchestrators = new Map<string, PipelineOrchestrator>();
 
 export function startPipeline(runId: string): void {
+  if (activeOrchestrators.has(runId)) {
+    console.warn(`Skipping duplicate start for run ${runId}: orchestrator already active`);
+    return;
+  }
+
   const orchestrator = new PipelineOrchestrator(runId);
   activeOrchestrators.set(runId, orchestrator);
 
@@ -1402,6 +1409,11 @@ export function startPipeline(runId: string): void {
 }
 
 export function resumePipeline(runId: string, retryFailed = false): void {
+  if (activeOrchestrators.has(runId)) {
+    console.warn(`Skipping duplicate resume for run ${runId}: orchestrator already active`);
+    return;
+  }
+
   const orchestrator = new PipelineOrchestrator(runId);
   activeOrchestrators.set(runId, orchestrator);
 
