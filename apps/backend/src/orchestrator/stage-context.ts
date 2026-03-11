@@ -52,6 +52,7 @@ export function createStageContext(params: {
   productDir: string;
   runner: AgentRunner;
   log: (content: string) => Promise<void>;
+  anthropicApiKey?: string;
 }): StageContext {
   return {
     runId: params.runId,
@@ -59,10 +60,16 @@ export function createStageContext(params: {
     productDir: params.productDir,
     runner: {
       runOnce(prompt, options) {
-        return params.runner.runOnce(prompt, options);
+        return params.runner.runOnce(prompt, {
+          ...options,
+          anthropicApiKey: options.anthropicApiKey ?? params.anthropicApiKey,
+        });
       },
       runLoop(prompt, options) {
-        return params.runner.runLoop(prompt, options);
+        return params.runner.runLoop(prompt, {
+          ...options,
+          anthropicApiKey: options.anthropicApiKey ?? params.anthropicApiKey,
+        });
       },
     },
     logger: createLogger(params.log),

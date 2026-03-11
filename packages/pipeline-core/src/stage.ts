@@ -10,6 +10,7 @@ export interface AgentRunOptions {
   maxBudgetUsd?: number;
   iteration?: number;
   agentId?: string;
+  anthropicApiKey?: string;
 }
 
 export interface AgentRunResult {

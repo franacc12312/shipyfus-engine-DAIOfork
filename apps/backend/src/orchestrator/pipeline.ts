@@ -24,6 +24,7 @@ import { injectPostHogSnippet } from '../services/posthog.js';
 import { buildStageApprovalRequest, createApprovalService, resolveAllPendingApprovalRequests } from '../services/approvals.js';
 import { appendStageMessage, formatPrdDraft, listStageMessages } from '../services/stage-messages.js';
 import { createStageContext } from './stage-context.js';
+import { decryptKey } from '../routes/settings.js';
 
 const PRODUCTS_DIR = resolve(import.meta.dirname, '../../../../products');
 
@@ -66,10 +67,54 @@ export class PipelineOrchestrator {
   private mockDomainPurchase = false;
   private skipDevelopment = false;
   private agentMap = new Map<string, string>();
+  private userAnthropicKey: string | undefined;
+  private userVercelToken: string | undefined;
 
   constructor(runId: string) {
     this.runId = runId;
     this.runner = new AgentRunner();
+  }
+
+  /**
+   * Load the triggering user's decrypted credentials for pipeline use.
+   * Falls back to system env vars if user has no keys stored.
+   */
+  private async loadUserCredentials(): Promise<void> {
+    try {
+      const { data: run } = await db
+        .from('runs')
+        .select('triggered_by')
+        .eq('id', this.runId)
+        .single();
+
+      if (!run?.triggered_by) return;
+
+      const { data: user } = await db
+        .from('users')
+        .select('anthropic_api_key_encrypted, vercel_token_encrypted')
+        .eq('id', run.triggered_by)
+        .single();
+
+      if (!user) return;
+
+      if (user.anthropic_api_key_encrypted) {
+        try {
+          this.userAnthropicKey = decryptKey(user.anthropic_api_key_encrypted);
+        } catch (err) {
+          console.warn(`Run ${this.runId}: failed to decrypt user Anthropic key`, err);
+        }
+      }
+
+      if (user.vercel_token_encrypted) {
+        try {
+          this.userVercelToken = decryptKey(user.vercel_token_encrypted);
+        } catch (err) {
+          console.warn(`Run ${this.runId}: failed to decrypt user Vercel token`, err);
+        }
+      }
+    } catch (err) {
+      console.warn(`Run ${this.runId}: failed to load user credentials`, err);
+    }
   }
 
   private async resolveAgents(): Promise<void> {
@@ -93,6 +138,7 @@ export class PipelineOrchestrator {
       // Update run status to running
       await this.updateRunStatus('running');
       await this.resolveAgents();
+      await this.loadUserCredentials();
 
       // Check run metadata for startFrom support
       const { data: runData } = await db
@@ -228,6 +274,7 @@ export class PipelineOrchestrator {
       console.log(`Resuming pipeline for run ${this.runId} (retryFailed=${retryFailed})`);
       await this.updateRunStatus('running');
       await this.resolveAgents();
+      await this.loadUserCredentials();
       await db.from('runs').update({ error: null }).eq('id', this.runId);
 
       // Always reset interrupted "running" and "cancelled" stages back to pending
@@ -593,6 +640,7 @@ export class PipelineOrchestrator {
         cwd: productDir,
         maxBudgetUsd: 2,
         agentId: this.agentMap.get('research'),
+        anthropicApiKey: this.userAnthropicKey,
       });
 
       const markdown = result.text?.trim();
@@ -633,6 +681,7 @@ export class PipelineOrchestrator {
           productDir,
           runner: this.runner,
           log: (content) => this.insertLog('ideation', content),
+          anthropicApiKey: this.userAnthropicKey,
         }),
         {
           config,
@@ -687,6 +736,7 @@ export class PipelineOrchestrator {
           productDir,
           runner: this.runner,
           log: (content) => this.insertLog('branding', content),
+          anthropicApiKey: this.userAnthropicKey,
         }),
         {
           prd,
@@ -790,6 +840,7 @@ export class PipelineOrchestrator {
         productDir,
         runner: this.runner,
         log: (content) => this.insertLog('branding', content),
+        anthropicApiKey: this.userAnthropicKey,
       }),
       {
         selection: chosen,
@@ -849,6 +900,7 @@ export class PipelineOrchestrator {
         productDir,
         runner: this.runner,
         log: (content) => this.insertLog('planning', content),
+        anthropicApiKey: this.userAnthropicKey,
       });
       const result = await stage.run(ctx, {
         prd,
@@ -901,6 +953,7 @@ export class PipelineOrchestrator {
         maxBudgetUsd: config.max_budget_usd ?? 10,
         maxIterations: config.max_iterations ?? 20,
         agentId: this.agentMap.get('development'),
+        anthropicApiKey: this.userAnthropicKey,
       });
 
       await db.from('run_stages').update({
@@ -934,13 +987,15 @@ export class PipelineOrchestrator {
     await this.updateStageStatus('deployment', 'running');
 
     try {
-      const prompt = buildDeployerPrompt(config, env.VERCEL_TOKEN);
+      const vercelToken = this.userVercelToken || env.VERCEL_TOKEN;
+      const prompt = buildDeployerPrompt(config, vercelToken);
       const result = await this.runner.runOnce(prompt, {
         runId: this.runId,
         stage: 'deployment',
         cwd: productDir,
         maxBudgetUsd: 5,
         agentId: this.agentMap.get('deployment'),
+        anthropicApiKey: this.userAnthropicKey,
       });
 
       const deployResult = result.json as { deployUrl: string | null; projectName?: string | null; status: string } | null;
@@ -996,6 +1051,7 @@ export class PipelineOrchestrator {
         stage: 'distribution',
         cwd: productDir,
         maxBudgetUsd: 1,
+        anthropicApiKey: this.userAnthropicKey,
         agentId: this.agentMap.get('distribution'),
       });
 
