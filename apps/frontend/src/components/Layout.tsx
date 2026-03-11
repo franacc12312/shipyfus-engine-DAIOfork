@@ -10,7 +10,8 @@ const NAV_ITEMS = [
   { to: '/products', label: 'Products', icon: '*' },
   { to: '/team', label: 'Team', icon: '@' },
   { to: '/backlog', label: 'Backlog', icon: '📋' },
-];
+  { to: '/workflow', label: 'Workflow', icon: '📖', adminOnly: true },
+] as const;
 
 export function Layout() {
   const location = useLocation();
@@ -50,7 +51,7 @@ export function Layout() {
         </div>
 
         <nav className="flex-1 p-2 space-y-1">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter((item) => !('adminOnly' in item && item.adminOnly) || isAdmin).map((item) => {
             const isActive =
               item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to);
             return (
