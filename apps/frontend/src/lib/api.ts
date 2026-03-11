@@ -1,4 +1,4 @@
-import { getPassword } from './auth';
+import { supabase } from './supabase';
 
 const BASE_URL = '/api';
 
@@ -11,15 +11,20 @@ export class ApiError extends Error {
   }
 }
 
+async function getAuthToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const password = getPassword();
+  const token = await getAuthToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...((options.headers as Record<string, string>) || {}),
   };
 
-  if (password) {
-    headers['Authorization'] = `Bearer ${password}`;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
 
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -33,21 +38,6 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   return res.json();
-}
-
-export async function verifyPassword(password: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${BASE_URL}/health/verify`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${password}`,
-      },
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
 }
 
 export const api = {
