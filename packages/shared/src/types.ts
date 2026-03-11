@@ -32,6 +32,7 @@ export interface Run {
   run_stages?: RunStage[];
   approval_requests?: ApprovalRequest[];
   stage_messages?: StageMessage[];
+  product?: Product | null;
 }
 
 export interface RunStage {
@@ -126,6 +127,15 @@ export interface Product {
   domain_name: string | null;
   analytics_enabled: boolean;
   posthog_project_id: string | null;
+  github_repo_owner: string | null;
+  github_repo_name: string | null;
+  github_repo_url: string | null;
+  github_default_branch: string | null;
+  github_clone_url: string | null;
+  github_is_private: boolean;
+  github_sync_status: GithubSyncStatus;
+  github_last_synced_at: string | null;
+  github_last_sync_error: string | null;
   status: ProductStatus;
   created_at: string;
 }
@@ -159,6 +169,7 @@ export type Department = 'research' | 'ideation' | 'branding' | 'planning' | 'de
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type StageStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped' | 'awaiting_approval' | 'awaiting_input';
 export type ProductStatus = 'built' | 'tested' | 'deployed' | 'archived';
+export type GithubSyncStatus = 'pending' | 'synced' | 'failed';
 export type StageInteractionMode = 'automatic' | 'approval' | 'interactive';
 export type StageMessageRole = 'system' | 'assistant' | 'user';
 export type StageMessageKind = 'message' | 'prd_draft';

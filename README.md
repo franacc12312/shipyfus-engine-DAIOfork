@@ -49,6 +49,9 @@ OWNER_USER_ID=your-uuid                 # from Supabase auth or seed data
 
 # Optional — stages that need these will be skipped if empty
 VERCEL_TOKEN=                           # deployment stage
+GITHUB_TOKEN=                           # create/push per-product repos
+GITHUB_ORG=TheDAIO
+GITHUB_DEFAULT_REPO_PRIVATE=true
 TAVILY_API_KEY=                         # market research stage
 PORKBUN_API_KEY=                        # domain purchase
 PORKBUN_API_SECRET=

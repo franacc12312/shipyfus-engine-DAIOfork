@@ -42,18 +42,31 @@ export function ProductCard({ product }: { product: Product }) {
       )}
 
       <div className="flex items-center justify-between text-[10px]">
-        {product.deploy_url ? (
-          <a
-            href={product.deploy_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-terminal-green hover:underline"
-          >
-            Visit &rarr;
-          </a>
-        ) : (
-          <span className="text-zinc-600">No deployment</span>
-        )}
+        <div className="flex items-center gap-3">
+          {product.deploy_url ? (
+            <a
+              href={product.deploy_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-terminal-green hover:underline"
+            >
+              Visit &rarr;
+            </a>
+          ) : (
+            <span className="text-zinc-600">No deployment</span>
+          )}
+
+          {product.github_repo_url && (
+            <a
+              href={product.github_repo_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-terminal-cyan hover:underline"
+            >
+              GitHub
+            </a>
+          )}
+        </div>
 
         {product.run_id && (
           <Link to={`/runs/${product.run_id}`} className="text-zinc-500 hover:text-zinc-300">

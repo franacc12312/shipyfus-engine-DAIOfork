@@ -253,6 +253,34 @@ export function RunDetail() {
                 </a>
               </div>
             )}
+            {run.product?.github_repo_url && (
+              <div>
+                <div className="text-[9px] text-zinc-600 uppercase tracking-wider">GitHub</div>
+                <a
+                  href={run.product.github_repo_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-terminal-cyan hover:underline break-all"
+                >
+                  {run.product.github_repo_url}
+                </a>
+                {run.product.github_default_branch && (
+                  <div className="mt-1 text-[10px] text-zinc-500">
+                    Branch: <span className="text-zinc-300">{run.product.github_default_branch}</span>
+                  </div>
+                )}
+                <div className="mt-1 text-[10px] text-zinc-500">
+                  Sync: <span className={run.product.github_sync_status === 'synced' ? 'text-terminal-green' : 'text-terminal-red'}>
+                    {run.product.github_sync_status}
+                  </span>
+                </div>
+                {run.product.github_last_sync_error && (
+                  <div className="mt-1 text-[10px] text-terminal-red break-words">
+                    {run.product.github_last_sync_error}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {run.idea_summary && (

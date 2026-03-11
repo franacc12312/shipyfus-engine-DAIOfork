@@ -86,6 +86,9 @@ vi.mock('../services/db.js', () => {
 vi.mock('../env.js', () => ({
   env: {
     VERCEL_TOKEN: 'test-token',
+    GITHUB_TOKEN: 'github-token',
+    GITHUB_ORG: 'TheDAIO',
+    GITHUB_DEFAULT_REPO_PRIVATE: true,
     OWNER_USER_ID: '00000000-0000-0000-0000-000000000001',
     PORKBUN_API_KEY: 'pk1_test',
     PORKBUN_API_SECRET: 'sk1_test',
@@ -164,6 +167,9 @@ const mockRunOnce = vi.fn();
 const mockRunLoop = vi.fn();
 const mockDestroy = vi.fn();
 const mockKillAll = vi.fn();
+const { mockEnsureProductRepository } = vi.hoisted(() => ({
+  mockEnsureProductRepository: vi.fn(),
+}));
 
 vi.mock('../agents/runner.js', () => ({
   AgentRunner: vi.fn().mockImplementation(() => ({
@@ -172,6 +178,10 @@ vi.mock('../agents/runner.js', () => ({
     destroy: mockDestroy,
     killAll: mockKillAll,
   })),
+}));
+
+vi.mock('../services/github.js', () => ({
+  ensureProductRepository: mockEnsureProductRepository,
 }));
 
 // Mock fs
@@ -185,6 +195,18 @@ import { PipelineOrchestrator } from '../orchestrator/pipeline.js';
 import { purchaseDomain, rankCandidates, configureDNSForVercel, verifyDomainOwnership } from '@daio/brand';
 
 function setupDefaultMocks() {
+  mockEnsureProductRepository.mockResolvedValue({
+    owner: 'TheDAIO',
+    name: 'testbrand-run1',
+    repoUrl: 'https://github.com/TheDAIO/testbrand-run1',
+    cloneUrl: 'https://github.com/TheDAIO/testbrand-run1.git',
+    defaultBranch: 'main',
+    isPrivate: true,
+    commitSha: 'abc123def456',
+    syncStatus: 'synced',
+    syncedAt: '2026-03-11T17:00:00.000Z',
+  });
+
   // Default mock: ideation returns PRD
   mockRunOnce.mockResolvedValueOnce({
     text: 'ideation result',
@@ -326,6 +348,24 @@ describe('PipelineOrchestrator', () => {
     expect(productInsert!.data.name).toBe('TestBrand'); // Branding stage renames from TestProduct
     expect(productInsert!.data.deploy_url).toBe('https://test.vercel.app');
     expect(productInsert!.data.domain_name).toBe('testbrand.xyz');
+    expect(productInsert!.data.github_repo_url).toBe('https://github.com/TheDAIO/testbrand-run1');
+    expect(productInsert!.data.github_repo_name).toBe('testbrand-run1');
+    expect(productInsert!.data.github_sync_status).toBe('synced');
+  });
+
+  it('fails the run when GitHub repo sync fails', async () => {
+    mockEnsureProductRepository.mockRejectedValueOnce(new Error('GitHub push failed'));
+
+    const orch = new PipelineOrchestrator('run-1');
+    await orch.execute();
+
+    const runFailure = dbOps.find((op) => op.table === 'runs' && op.op === 'update' && op.data?.status === 'failed');
+    expect(runFailure).toBeDefined();
+
+    const deploymentFailure = dbOps.find(
+      (op) => op.table === 'run_stages' && op.op === 'update' && op.data?.status === 'failed'
+    );
+    expect(deploymentFailure).toBeDefined();
   });
 
   it('calls destroy on runner when done', async () => {
