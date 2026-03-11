@@ -50,7 +50,19 @@ router.get('/:id', async (req, res, next) => {
       return;
     }
 
-    res.json(data);
+    let product = null;
+    if (data.product_id) {
+      const { data: productData, error: productError } = await db
+        .from('products')
+        .select('*')
+        .eq('id', data.product_id)
+        .maybeSingle();
+
+      if (productError) throw productError;
+      product = productData;
+    }
+
+    res.json({ ...data, product });
   } catch (err) {
     next(err);
   }

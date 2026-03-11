@@ -107,6 +107,17 @@ const mockRunOnce = vi.fn();
 const mockRunLoop = vi.fn();
 const mockDestroy = vi.fn();
 const mockKillAll = vi.fn();
+const mockEnsureProductRepository = vi.fn().mockResolvedValue({
+  owner: 'TheDAIO',
+  name: 'testbrand-run1',
+  repoUrl: 'https://github.com/TheDAIO/testbrand-run1',
+  cloneUrl: 'https://github.com/TheDAIO/testbrand-run1.git',
+  defaultBranch: 'main',
+  isPrivate: true,
+  commitSha: 'abc123def456',
+  syncStatus: 'synced',
+  syncedAt: '2026-03-11T17:00:00.000Z',
+});
 
 vi.mock('../agents/runner.js', () => ({
   AgentRunner: vi.fn().mockImplementation(() => ({
@@ -117,8 +128,13 @@ vi.mock('../agents/runner.js', () => ({
   })),
 }));
 
+vi.mock('../services/github.js', () => ({
+  ensureProductRepository: (...args: any[]) => mockEnsureProductRepository(...args),
+}));
+
 vi.mock('node:fs', () => ({
   mkdirSync: vi.fn(),
+  existsSync: vi.fn().mockReturnValue(false),
 }));
 
 import { PipelineOrchestrator } from '../orchestrator/pipeline.js';
@@ -158,6 +174,7 @@ describe('Domain Attachment in Pipeline', () => {
     mockRunLoop.mockReset();
     mockDestroy.mockReset();
     mockKillAll.mockReset();
+    mockEnsureProductRepository.mockClear();
     dbOps.length = 0;
   });
 

@@ -18,6 +18,7 @@ import type { PorkbunConfig } from '@daio/brand';
 import type { TwitterConfig } from '@daio/social';
 import type { IdeationConfig, ResearchConfig, BrandingConfig, PlanningConfig, DevelopmentConfig, DeploymentConfig, DistributionConfig, AnalyticsConfig, ProductPRD, Department, HitlConfig, DomainChoice, StageInteractionMode } from '@daio/shared';
 import { getRandomRetryMessage } from '@daio/shared';
+import { ensureProductRepository, type EnsureProductRepoResult } from '../services/github.js';
 import { addDomainToProject, getDomainConfig, parseProjectNameFromUrl, deployPreview } from '../services/vercel.js';
 import { injectPostHogSnippet } from '../services/posthog.js';
 import { buildStageApprovalRequest, createApprovalService, resolveAllPendingApprovalRequests } from '../services/approvals.js';
@@ -454,14 +455,40 @@ export class PipelineOrchestrator {
       throw new Error('Deployment previously failed');
     } else {
       if (this.cancelled) return;
-      const deployResult = await this.runDeployment(constraints.deployment, productDir, domainForDeployment);
+      try {
+        const deployResult = await this.runDeployment(constraints.deployment, productDir, domainForDeployment);
 
-      // Attach purchased domain to Vercel project (non-fatal if it fails)
-      if (domainForDeployment && deployResult.deployUrl && env.VERCEL_TOKEN) {
-        await this.attachDomainToVercel(deployResult.deployUrl, deployResult.projectName, domainForDeployment);
+        // Attach purchased domain to Vercel project (non-fatal if it fails)
+        if (domainForDeployment && deployResult.deployUrl && env.VERCEL_TOKEN) {
+          await this.attachDomainToVercel(deployResult.deployUrl, deployResult.projectName, domainForDeployment);
+        }
+
+        await this.insertLog('deployment', 'Creating GitHub repository for generated product');
+        const githubRepo = await ensureProductRepository({
+          productName: prd.productName,
+          runId: this.runId,
+          productDir,
+          description: prd.productDescription,
+        });
+        await this.insertLog('deployment', `GitHub repository synced: ${githubRepo.repoUrl}`);
+
+        await this.registerProduct(
+          prd,
+          { deployUrl: deployResult.deployUrl, domainName: domainForDeployment, analyticsEnabled: analyticsInjected },
+          productDir,
+          githubRepo,
+        );
+        await this.completeDeploymentStage({
+          ...(deployResult.outputContext || {}),
+          githubRepoUrl: githubRepo.repoUrl,
+          githubRepoName: githubRepo.name,
+          githubDefaultBranch: githubRepo.defaultBranch,
+          githubCommitSha: githubRepo.commitSha,
+        }, deployResult.cost);
+      } catch (err) {
+        if (!this.cancelled) await this.updateStageStatus('deployment', 'failed');
+        throw err;
       }
-
-      await this.registerProduct(prd, { ...deployResult, domainName: domainForDeployment, analyticsEnabled: analyticsInjected }, productDir);
     }
 
     // Stage 6: Distribution (optional — skipped if disabled, no Twitter creds, or no deploy URL)
@@ -899,7 +926,11 @@ export class PipelineOrchestrator {
     }
   }
 
-  private async runDeployment(config: DeploymentConfig, productDir: string, domainName?: string | null): Promise<{ deployUrl: string | null; projectName: string | null }> {
+  private async runDeployment(
+    config: DeploymentConfig,
+    productDir: string,
+    domainName?: string | null,
+  ): Promise<{ deployUrl: string | null; projectName: string | null; outputContext: Record<string, unknown> | null; cost: number }> {
     await this.updateStageStatus('deployment', 'running');
 
     try {
@@ -916,18 +947,16 @@ export class PipelineOrchestrator {
       const deployUrl = deployResult?.deployUrl || null;
       const projectName = deployResult?.projectName || null;
 
-      await db.from('run_stages').update({
-        status: 'completed',
-        output_context: deployResult as Record<string, unknown> | null,
-        cost_usd: result.cost,
-        completed_at: new Date().toISOString(),
-      }).eq('run_id', this.runId).eq('stage', 'deployment');
-
       if (deployUrl) {
         await db.from('runs').update({ deploy_url: deployUrl }).eq('id', this.runId);
       }
 
-      return { deployUrl, projectName };
+      return {
+        deployUrl,
+        projectName,
+        outputContext: deployResult as Record<string, unknown> | null,
+        cost: result.cost,
+      };
     } catch (err) {
       if (!this.cancelled) await this.updateStageStatus('deployment', 'failed');
       throw err;
@@ -1018,7 +1047,21 @@ export class PipelineOrchestrator {
     }
   }
 
-  private async registerProduct(prd: ProductPRD, deployResult: { deployUrl: string | null; domainName?: string | null; analyticsEnabled?: boolean }, productDir: string): Promise<void> {
+  private async completeDeploymentStage(outputContext: Record<string, unknown> | null, cost: number): Promise<void> {
+    await db.from('run_stages').update({
+      status: 'completed',
+      output_context: outputContext,
+      cost_usd: cost,
+      completed_at: new Date().toISOString(),
+    }).eq('run_id', this.runId).eq('stage', 'deployment');
+  }
+
+  private async registerProduct(
+    prd: ProductPRD,
+    deployResult: { deployUrl: string | null; domainName?: string | null; analyticsEnabled?: boolean },
+    productDir: string,
+    githubRepo: EnsureProductRepoResult,
+  ): Promise<void> {
     const { data } = await db.from('products').insert({
       run_id: this.runId,
       name: prd.productName,
@@ -1029,6 +1072,15 @@ export class PipelineOrchestrator {
       deploy_url: deployResult.deployUrl,
       domain_name: deployResult.domainName ?? null,
       analytics_enabled: deployResult.analyticsEnabled ?? false,
+      github_repo_owner: githubRepo.owner,
+      github_repo_name: githubRepo.name,
+      github_repo_url: githubRepo.repoUrl,
+      github_default_branch: githubRepo.defaultBranch,
+      github_clone_url: githubRepo.cloneUrl,
+      github_is_private: githubRepo.isPrivate,
+      github_sync_status: githubRepo.syncStatus,
+      github_last_synced_at: githubRepo.syncedAt,
+      github_last_sync_error: null,
       status: deployResult.deployUrl ? 'deployed' : 'built',
     }).select().single();
 
